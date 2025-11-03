@@ -10,7 +10,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "dtd.h" 
-#define SIZE 600
+#define SIZE 800
 // 함수 선언
 void MakeVertexShaders();
 void MakeFragmentShaders();
@@ -19,6 +19,7 @@ void InitBuffers();
 GLvoid DrawScene();
 GLvoid Reshape(int w, int h);
 void Mouse(int button, int state, int x, int y);
+void Motion(int x, int y);
 void Keyboard(unsigned char key, int x, int y);
 void SpecialKeyboard(int key, int x, int y); // 특수 키(화살표) 처리 함수 선언
 void LoadOBJ(const char* filename);
@@ -29,16 +30,19 @@ GLuint make_shaderProgram();
 void TimerFunction(int value);
 GLchar* filetobuf(const char* file);
 // 전역 변수
-GLint width = 600, height = 600;
+GLint width = 1000, height = 1000;
 GLuint shaderProgramID, vertexShader, fragmentShader;
 GLuint VAO, VBO, EBO;
 
 random_device rd;
 mt19937 gen(rd());
-uniform_real_distribution<float> rcolor(0.0f, 1.0f);
-uniform_int_distribution<int> Rint(1, 9);
+uniform_real_distribution<float> r_speed(0.1f, 0.2f);
+uniform_int_distribution<int> r_size(50, 100);
+uniform_int_distribution<int> r_m(0, 1);
 
-bool checkbox[10] = { false, };
+
+
+
 
 typedef struct {
 	float x, y, z;
@@ -61,7 +65,6 @@ public:
 	glm::vec3 r = { 0.0f,0.0f,0.0f };
 	glm::vec3 colors;
 	glm::mat4 modelMat = glm::mat4(1.0f);
-	glm::vec3 orimodelMat = glm::vec3(0.0f);
 	int shape_num;
 	float angle = 0.0f;
 	Shape(Model model, int i) {
@@ -123,95 +126,6 @@ public:
 		colors = glm::vec3(r, g, b);
 
 	}
-	void move(float x, float y, float z) {
-		for (size_t i = 0; i < vertexData.size() / 3; ++i) {
-			vertexData[3 * i] += x;
-			vertexData[3 * i + 1] += y;
-			vertexData[3 * i + 2] += z;
-		}
-	}
-	void Rotate(float x, float y, float z,
-		float x_rotate, float y_rotate, float z_rotate,
-		int index)
-	{
-		// vertexData: [x0, y0, z0, x1, y1, z1, ...]
-		int start = index * 3;
-		if (start + 2 >= vertexData.size()) return; // 범위 확인
-
-		// 회전할 정점 하나
-		glm::vec3 v(vertexData[start], vertexData[start + 1], vertexData[start + 2]);
-
-		// 회전 행렬 준비
-		glm::mat4 model(1.0f);
-		model = glm::translate(model, glm::vec3(x, y, z)); // 중심 이동
-
-		if (x_rotate != 0.0f)
-			model = glm::rotate(model, glm::radians(x_rotate), glm::vec3(1, 0, 0));
-		if (y_rotate != 0.0f)
-			model = glm::rotate(model, glm::radians(y_rotate), glm::vec3(0, 1, 0));
-		if (z_rotate != 0.0f)
-			model = glm::rotate(model, glm::radians(z_rotate), glm::vec3(0, 0, 1));
-
-		model = glm::translate(model, glm::vec3(-x, -y, -z)); // 원위치
-
-		// 회전 적용
-		glm::vec4 v4 = model * glm::vec4(v, 1.0f);
-
-		vertexData[start + 0] = v4.x;
-		vertexData[start + 1] = v4.y;
-		vertexData[start + 2] = v4.z;
-	}
-	void RotateWorld(float cx, float cy, float cz, float angle, int index, int num)
-	{
-		// 회전할 점의 위치 읽기
-		float& vx = vertexData[index * 3 + 0];
-		float& vy = vertexData[index * 3 + 1];
-		float& vz = vertexData[index * 3 + 2];
-
-		// 기준점 중심으로 이동
-		float tx = vx - cx;
-		float ty = vy - cy;
-		float tz = vz - cz;
-
-		// 월드 z축 기준 회전 (x, y만 변함)
-		float cosA = cos(angle);
-		float sinA = sin(angle);
-
-		float rx = 0.0f;
-		float ry = 0.0f;
-		float rz = 0.0f;
-
-		if (num == 0) {
-			rx = tx * cosA - ty * sinA;
-			ry = tx * sinA + ty * cosA;
-			rz = tz; // z축 회전이므로 z는 그대로 유지
-		}
-		else if (num == 1) {
-			//x축회전
-			rx = tx;
-			ry = ty * cosA - tz * sinA;
-			rz = ty * sinA + tz * cosA;
-		}
-		else {
-			//y축회전
-			rx = tx * cosA + tz * sinA;
-			ry = ty;
-			rz = -tx * sinA + tz * cosA;
-		}
-
-
-		// 다시 원래 위치로 복귀
-		vx = rx + cx;
-		vy = ry + cy;
-		vz = rz + cz;
-	}
-	void Scale(float cx, float cy, float cz, float scale, int index) {
-		int start = index * 3;
-		if (start + 2 >= vertexData.size()) return;
-		vertexData[start + 0] = (vertexData[start + 0] - cx) * scale + cx;
-		vertexData[start + 1] = (vertexData[start + 1] - cy) * scale + cy;
-		vertexData[start + 2] = (vertexData[start + 2] - cz) * scale + cz;
-	}
 	glm::vec3 Center() {
 		glm::vec3 center(0.0f);
 		for (int i = 0; i < vertexData.size() / 3; ++i) {
@@ -222,27 +136,88 @@ public:
 		center /= static_cast<float>(vertexData.size() / 3);
 		return center;
 	}
-	glm::vec3 ToWorldPos(const glm::vec3& localPos)
-	{
-		glm::vec4 world = modelMat * glm::vec4(localPos, 1.0f);
-		return glm::vec3(world);
-	}
-
-
-	void draw() {
-		glBindVertexArray(VAO);
-		glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-		glBindVertexArray(0);
-	}
 
 
 };
 vector<Shape>shape;
+
+class Block {
+public:
+	vector<GLfloat> vertexData;
+	vector<GLuint> indices;
+	glm::vec3 t = { 0.0f,0.0f,0.0f };
+	glm::vec3 s = { 1.0f,1.0f,1.0f };
+	glm::vec3 r = { 0.0f,0.0f,0.0f };
+	glm::vec3 colors;
+	glm::mat4 modelMat = glm::mat4(1.0f);
+	int size = 0;
+	float speed = 0.0f;
+	float angle = 0.0f;
+	Block(Model model, int size_,float speed_) {
+		vertexData.clear();
+		InitBuffer(model);
+		ColorRandom(model);
+		size = size_;
+		speed = speed_;
+	}
+	void InitBuffer(Model model) {
+		vertexData.clear();
+		for (size_t i = 0; i < model.face_count; ++i) {
+			Face f = model.faces[i];
+			Vertex v1 = model.vertices[f.v1];
+			Vertex v2 = model.vertices[f.v2];
+			Vertex v3 = model.vertices[f.v3];
+			// 첫 번째 꼭짓점
+			vertexData.push_back(v1.x);
+			vertexData.push_back(v1.y);
+			vertexData.push_back(v1.z);
+			// 두 번째 꼭짓점
+			vertexData.push_back(v2.x);
+			vertexData.push_back(v2.y);
+			vertexData.push_back(v2.z);
+			// 세 번째 꼭짓점
+			vertexData.push_back(v3.x);
+			vertexData.push_back(v3.y);
+			vertexData.push_back(v3.z);
+		}
+		indices.clear();
+	}
+	void Update(Model model) {
+		//vertexData.clear();
+		//for(size_t i = 0; i < model.vertex_count; ++i) {
+		//	Vertex v = model.vertices[i];
+		//	// OBJ 좌표를 OpenGL에 맞게 사용 (스케일링 제거, 0~1 범위 그대로)
+		//	float x = v.x;
+		//	float y = v.y;
+		//	float z = v.z;
+		//	vertexData.push_back(x);
+		//	vertexData.push_back(y);
+		//	vertexData.push_back(z);
+		//}
+		//indices.clear();
+		//for(size_t i = 0; i < model.face_count; ++i) {
+		//	indices.push_back(model.faces[i].v1);
+		//	indices.push_back(model.faces[i].v2);
+		//	indices.push_back(model.faces[i].v3);
+		//}
+	}
+	void ColorRandom(Model model) {
+		colors = { 0.0f,0.0f,0.0f };
+
+		float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+		float g = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+		float b = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+		colors = glm::vec3(r, g, b);
+
+	}
+};
+vector<Block>block;
 void read_newline(char* str) {
 	char* pos;
 	if ((pos = strchr(str, '\n')) != NULL)
 		*pos = '\0';
 }
+
 
 Model read_obj_file(const char* filename) {
 	FILE* file;
@@ -337,100 +312,96 @@ Model read_obj_file(const char* filename) {
 
 	return model;
 }
-glm::vec3 Rotate(glm::vec3 x, glm::vec3 center, float angle, glm::vec3 axis)
-{
-	glm::mat4 model(1.0f);
-	model = glm::translate(model, center);
-	model = glm::rotate(model, angle, axis); // angle은 라디안, axis는 단위벡터
-	model = glm::translate(model, -center);
-
-	glm::vec4 v4 = model * glm::vec4(x, 1.0f);
-	return glm::vec3(v4);
-}
 
 vector<Model> model;
 int facenum = -1;
 int modelType = 0; // 0: Cube, 1: Cone
 bool allFaceDraw = true; // true: 전체 면 그리기, false: 한 면씩 그리기
 
-//커비
-glm::vec3 cameraPos = glm::vec3(5.0f, 5.0f, 5.0f);
-float cameraAngleori = 90.0f;
-float cameraAngle = glm::atan(glm::radians(cameraAngleori)); // 초기 각도 (45도 라디안)
-
-// 도형(모델) 이동 및 회전 관련 추가 전역 변수
+//숙제에서 쓸 변수들 코드 네임 황혼 ghkdghs
+//카메라
+glm::vec3 cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
 glm::vec3 modelPos = glm::vec3(0.0f, 0.0f, 0.0f);  // 도형 위치 (X, Y, Z 이동량)
-float modelRotY = 0.0f;  // Y축 회전 각도 (라디안)
-float modelRotX = 0.0f;  // X축 회전 각도 (라디안)
+glm::vec3 camera_move = glm::vec3(0.0f, 0.0f, 0.0f); 
+
 
 int shape_check = 0;
+
+//카메라 무브
 int ws_ = 0;
 int ad_ = 0;
 int pn_ = 0;
-int y_ = 0;
-int r_ = 0;
-bool t = false;
-bool l = false;
-bool g = false;
-bool p = false;
-bool silver = false;
-bool solid = false;
 
-glm::vec3 camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
-glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);  // 카메라가 바라보는 목표점
-float w1 = 0.0f;
-float w2 = 0.0f;
-int w = 15;
+//마우스
+bool left_mouse = false;
+int new_mousex, new_mousey;
+int old_mousex, old_mousey;
+float sense = 0.1f;
 
-float x_rotate = 1.0f;
-float y_rotate = 1.0f;
-float z_rotate = 1.0f;
-
-glm::vec3 center1;
-glm::vec3 center2;
-glm::vec3 center3;
-glm::vec3 center4;
+//할거 8 7 5 6을 이용하여 카메라가 돌려져도 이동시키기 각도를 가져와서 ㄱㄱ
 
 
-float rotate_count = 0.0f;
+//가로 세로 받는 변수
+int block_width = 25;
+int block_height = 25;
+int block_start = 0;
 
-int scale_time = 0;
+//게임 시작 변수
+bool start = false;
 
-int move_num = 0;
 
-glm::vec3 center = { 0.0f,0.0f,0.0f };
-glm::vec3 rotate1 = glm::vec3(0, 0.707f, -0.707f);
-glm::vec3 rotate2 = glm::vec3(0, 1.0f, 0.0f);
-glm::vec3 rotate3 = glm::vec3(0, 0.707f, 0.707f);
 
-float _z = 0.0f;
-int z_mode = 0;
 
-//커비
+//명령어 라스트 커멘드
+bool op = false;
+bool m = false;
+bool v = false;
+
+
+
+GLfloat tranformx(int x) {
+	return ((float)x / (width / 2)) - 1.0f;
+}
+GLfloat tranformy(int y) {
+	return ((height - (float)y) / (height / 2)) - 1.0f;
+}
+
+
+//커비 zjql
 void InitData() {
-	shape.clear();
-	for (size_t i = 0; i < 8; ++i) {
-		shape.push_back(Shape(model[0], i));// Shape 생성 시 model 정보 전달
-		if (i == 0) {
-			shape[i].s = { 2.0f,0.5f,1.0f };
-		}
-		else if (i == 1) {
-			shape[i].s = { 1.2f,0.4f,0.6f };
-			shape[i].t = { 0.5f,0.5f,0.25f };
-		}
-		else if (i < 4) {
-			shape[i].s = { 0.8f,0.5f,0.4f };
-			shape[i].t = { (i - 2) * 1.5f,0.9f,0.35f };
-		}
-		else if (i < 6) {
-			shape[i].s = { 0.1f,0.1f,0.8f };
-			shape[i].t = { i == 4 ? 0.4f : 1.8f,1.1f,0.75f };
-		}
-		else {
-			shape[i].s = { 0.15f,1.0f,0.15f };
-			shape[i].t = { i == 6 ? 0.4f : 1.8f,1.2f,0.5f };
-		}
+	while (block_width < 5 || block_height < 5 || block_width > 25 || block_height > 25) {
+		cout << "가로 길이와 세로 길이를 입력해주세요." << endl;
+		cout << "* 길이 제한 : 5 ~ 25 *" << endl;
+		cout << "입력 : ";cin >> block_width >> block_height;
 
+	}
+	block_start = block_width * block_height;
+	system("chcp 65001");
+	fstream f{ "commend.txt" };
+	string s;
+	while (getline(f, s))cout << s << endl;
+
+
+	block.clear();
+	for (float i = -(float)block_width / 2;i < (float)block_height/2;i+=1.0f) {
+		for (float j = -(float)block_height / 2;j < (float)block_width/2;j += 1.0f) {
+			block.push_back(Block(model[0], r_size(gen), r_speed(gen)));
+
+			float f = (i + j) / (float)(block_width + block_height);
+			block.back().colors = {f ,1.0f - f,1.0f - f };
+
+			block.back().t = glm::vec3(i, 0.0f, j);
+			block.back().s.y = 0.1f;
+
+			glm::mat4 m = glm::mat4(1.0f);
+
+			m = glm::translate(m, block.back().t);
+			m = glm::scale(m, block.back().s);
+
+			block.back().modelMat = m;
+
+
+		}
 	}
 
 
@@ -441,13 +412,13 @@ void Update() {
 	vector<GLfloat> vertexData;
 	vector<GLuint> indices;
 
-	for (size_t i = 0; i < shape.size(); ++i) {
-		shape[i].Update(model[0]);
-		vertexData.insert(vertexData.end(), shape[i].vertexData.begin(), shape[i].vertexData.end());
+	for (size_t i = 0; i < block.size(); ++i) {
+		block[i].Update(model[0]);
+		vertexData.insert(vertexData.end(), block[i].vertexData.begin(), block[i].vertexData.end());
 
 		// 인덱스 오프셋 보정 필요 (여러 모델 합칠 경우)
-		GLuint offset = i == 0 ? 0 : (GLuint)(vertexData.size() / 3 - shape[i].vertexData.size() / 3);
-		for (auto idx : shape[i].indices) indices.push_back(idx + offset);
+		GLuint offset = i == 0 ? 0 : (GLuint)(vertexData.size() / 3 - block[i].vertexData.size() / 3);
+		for (auto idx : block[i].indices) indices.push_back(idx + offset);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -457,6 +428,9 @@ void Update() {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_DYNAMIC_DRAW);
 }
 int main(int argc, char** argv) {
+	model.push_back(read_obj_file("cube.obj"));
+	InitData();
+
 	srand(static_cast<unsigned>(time(0))); // 랜덤 시드 초기화
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH 추가
@@ -470,6 +444,7 @@ int main(int argc, char** argv) {
 		return -1;
 	}
 
+
 	MakeVertexShaders();
 	MakeFragmentShaders();
 	shaderProgramID = MakeShaderProgram();
@@ -477,14 +452,14 @@ int main(int argc, char** argv) {
 		std::cerr << "셰이더 프로그램 생성 실패" << std::endl;
 		return -1;
 	}
-	model.push_back(read_obj_file("cube.obj"));
+	
 
 	InitBuffers();
-	InitData();
 	glutTimerFunc(10, TimerFunction, 1);
 	glutDisplayFunc(DrawScene);
 	glutReshapeFunc(Reshape);
 	glutMouseFunc(Mouse);
+	glutMotionFunc(Motion);
 	glutKeyboardFunc(Keyboard);
 	glutSpecialFunc(SpecialKeyboard); // 특수 키(화살표) 함수 등록
 
@@ -580,10 +555,7 @@ void InitBuffers() {
 }
 
 void DrawScene() {
-	// 카메라 위치 업데이트
-	//float r = glm::sqrt(cameraPos.x * cameraPos.x + cameraPos.z * cameraPos.z); // XZ 평면 거리
-	//cameraPos.x = r * glm::cos(cameraAngle);
-	//cameraPos.z = r * glm::sin(cameraAngle);
+
 
 	glEnable(GL_DEPTH_TEST); // 깊이 테스트 활성화
 	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
@@ -593,13 +565,7 @@ void DrawScene() {
 	//	glDisable(GL_CULL_FACE);
 
 
-	if (silver) {
-		glEnable(GL_CULL_FACE);
-		glCullFace(GL_BACK); // 뒷면 제거
-	}
-	else {
-		glDisable(GL_CULL_FACE);
-	}
+	
 
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 깊이 버퍼 클리어 추가
@@ -609,10 +575,6 @@ void DrawScene() {
 
 	Update();
 
-	if (!solid)
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	else
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 
 	// Uniform 매트릭스 매핑
@@ -622,64 +584,71 @@ void DrawScene() {
 	GLint faceColorLoc = glGetUniformLocation(shaderProgramID, "faceColor");
 
 
-	//--------------------------------------------------------------------------
 
 
-	GLuint offset = 0;
-	for (int i = 0; i < shape.size(); ++i) {
-		for (int j = 0; j < shape[i].vertexData.size() / 9; ++j) { // colors 개수 == face 개수
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(shape[i].modelMat));
-			glUniform3f(faceColorLoc, shape[i].colors[0], shape[i].colors[1], shape[i].colors[2]);
-			glDrawArrays(GL_TRIANGLES, offset, 3);
-			offset += 3;
+
+	glViewport(0, 0, width, height);
+	{
+		// Camera (View) 및 Projection 매트릭스 설정
+		glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f)); // 뷰 매트릭스
+		glm::mat4 proj;
+
+		if (op) {
+			float aspect = (float)width / (float)height;
+			float size = 5.0f;
+			proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
+		}
+		else {
+			proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+		}
+
+
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+		GLuint offset = 0;
+		for (int i = 0; i < block.size(); ++i) {
+			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) { // colors 개수 == face 개수
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
+				glDrawArrays(GL_TRIANGLES, offset, 3);
+				offset += 3;
+			}
+		}
+
+	}
+	glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
+	{
+		float maxrange = max(block_width, block_height) / 2.0f + 2.0f; 
+
+	
+		glm::mat4 view = glm::lookAt(
+			glm::vec3(0.0f, 30.0f, 0.0f),    
+			glm::vec3(0.0f, 0.0f, 0.0f),     
+			glm::vec3(0.0f, 0.0f, -1.0f)     
+		);
+
+		// 직교 투영을 블록 범위에 맞게 조정
+		glm::mat4 proj = glm::ortho(-maxrange, maxrange,-maxrange, maxrange,0.1f, 50.0f);
+
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+		GLuint offset = 0;
+		for (int i = 0; i < block.size(); ++i) {
+			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
+				glDrawArrays(GL_TRIANGLES, offset, 3);
+				offset += 3;
+			}
 		}
 	}
 
-	//--------------------------------------------------------------------------
-	// Camera (View) 및 Projection 매트릭스 설정
-	glm::vec3 camera_ = cameraPos + camera_move;
-	glm::mat4 view = glm::lookAt(camera_, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f)); // 뷰 매트릭스
-	glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f); // 프로젝션 매트릭스
 
-	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+	
 
 
-	glm::mat4 axisModelMat = glm::mat4(1.0f);
-	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(axisModelMat));
-
-	//---------------------------------------------------------------------------
-	// XYZ 축 
-	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(axisModelMat));
-
-	std::vector<GLfloat> axesData = {
-		// X축
-		-5.0f,0.0f,0.0f,  // 시작
-		5.0f,0.0f,0.0f,  // 끝
-
-		// Y축
-		0.0f,-5.0f,0.0f,
-		0.0f,5.0f,0.0f,
-
-		// Z축
-		0.0f,0.0f,-5.0f,
-		0.0f,0.0f,5.0f
-	};
-
-	// 축용 VBO 업로드 (위치만, 색상 uniform 사용)
-	glBufferData(GL_ARRAY_BUFFER, axesData.size() * sizeof(GLfloat), axesData.data(), GL_DYNAMIC_DRAW);
-
-	// X축
-	glUniform3f(faceColorLoc, 1.0f, 0.0f, 0.0f);
-	glDrawArrays(GL_LINES, 0, 2);
-
-	// Y축 
-	glUniform3f(faceColorLoc, 0.0f, 0.0f, 1.0f);
-	glDrawArrays(GL_LINES, 2, 2);
-
-	// Z축 
-	glUniform3f(faceColorLoc, 0.0f, 1.0f, 0.0f);
-	glDrawArrays(GL_LINES, 4, 2);
 
 	glBindVertexArray(0);
 	glutSwapBuffers();
@@ -692,90 +661,157 @@ void Reshape(int w, int h) {
 	height = h;
 }
 
-void Mouse(int button, int state, int x, int y) {
+void Mouse(int button, int state, int x, int y)
+{
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+		old_mousex =x, old_mousey = y;
+		left_mouse = true;
+	}
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
+		left_mouse = false;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
+
+	}
+
+	glutPostRedisplay();
 
 }
-bool ani = false;
+void Motion(int x, int y)
+{
+	if (left_mouse) {
+		int deltaX = x - old_mousex;
+		int deltaY = y - old_mousey;
+
+		
+
+		if (deltaX != 0) {
+			float angle = deltaX * sense;
+			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
+		}
+
+		if (deltaY != 0) {
+			float angle = -deltaY * sense;
+			glm::vec3 c = cameraPos - camera_move;
+			glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
+			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
+			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
+		}
+
+		old_mousex = x;
+		old_mousey = y;
+
+		glutPostRedisplay();
+	}
+}
+
+void camera_y_rotate(bool b) {
+	glm::mat4 m = glm::mat4(1.0f);
+	
+	if (b) {
+		m = glm::rotate(m, glm::radians(5.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+	else {
+		m = glm::rotate(m, glm::radians(-5.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+	
+	cameraPos = glm::vec3(m * glm::vec4(cameraPos, 1.0f));
+}
+
 void Keyboard(unsigned char key, int x, int y)
 {
+	if(start)
 	switch (key)
 	{
-	case 't':
-		t = !t;
-		break;
-	case 'l':
-		if (!l) {
-			w1 = shape[2].t.x;
-			w2 = shape[3].t.x;
-			w = 15;
-		}
-		l = true;
-		break;
-	case 'g':
-		g = !g;
-		break;
+	case 'o':
+	op = true;
+	break;
 	case 'p':
-		p = !p;
-		break;
+	op = false;
+	break;
 	case 'z':
-		++pn_;
-		break;
-	case 'Z':
-		--pn_;
-		break;
-	case 'x':
-		++ad_;
-		break;
-	case 'X':
-		--ad_;
-		break;
-	case 'y':
-	{
-		glm::vec3 direction = cameraTarget - (cameraPos + camera_move);
-		glm::mat4 rot = glm::rotate(glm::mat4(1.0f), glm::radians(1.0f), { 0.0f,1.0f,0.0f });
-		direction = glm::vec3(rot * glm::vec4(direction, 0.0f));
-		cameraTarget = (cameraPos + camera_move) + direction;
+	if (!op) {
+		cameraPos.z -= 0.1;
+		camera_move.z -= 0.1;
 	}
+	break;
+	case 'Z':
+	if (!op) {
+		cameraPos.z += 0.1;
+		camera_move.z += 0.1;
+	}
+	break;
+	case 'm':
+	m = true;
+	break;
+	case 'M':
+	m = false;
+	break;
+	case 'y':
+	camera_y_rotate(true);
 	break;
 	case 'Y':
-	{
-		glm::vec3 direction = cameraTarget - (cameraPos + camera_move);
-		glm::mat4 rot = glm::rotate(glm::mat4(1.0f), glm::radians(-1.0f), { 0.0f,1.0f,0.0f });
-		direction = glm::vec3(rot * glm::vec4(direction, 0.0f));
-		cameraTarget = (cameraPos + camera_move) + direction;
-	}
+	camera_y_rotate(false);
 	break;
 	case 'r':
-	{
-		glm::mat4 cameraori = glm::mat4(1.0f);
-		cameraori = glm::rotate(cameraori, glm::radians(1.0f), { 0.0f,1.0f,0.0f });
-		cameraPos = glm::vec3(cameraori * glm::vec4(cameraPos, 1.0f));
+
+	break;
+	case 'v':
+	v = !v;
+	if (!v)m = true;
+	else m = false;
+	break;
+	case 's':
+
+	break;
+	case '+':
+	for (int i = 0;i < block.size();++i) {
+		block[i].speed += 0.01f;
 	}
 	break;
-	case 'R':
-	{
-		glm::mat4 cameraori = glm::mat4(1.0f);
-		cameraori = glm::rotate(cameraori, glm::radians(-1.0f), { 0.0f,1.0f,0.0f });
-		cameraPos = glm::vec3(cameraori * glm::vec4(cameraPos, 1.0f));
+	case '-':
+	for (int i = 0;i < block.size();++i) {
+		if(block[i].speed> 0.01f)
+		block[i].speed -= 0.01f;
 	}
 	break;
-	case 'a':
-		r_ = r_ != 1 ? 1 : 0;
-		break;
-	case 'o':
-		ani = !ani;
-		if (!ani)
-			glutTimerFunc(10, TimerFunction, 1);
-		break;
+	case '1':
+
+	break;
+	case '3':
+
+	break;
 	case 'c':
-		InitData();
-		camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
-		cameraPos = glm::vec3(5.0f, 5.0f, 5.0f);
+	system("cls");
+	InitData();
+	start = false;
+	break;
+	case 'q':
+	exit(0);
+	break;
+
+
+
+	//추가구현들
+	case '8':
+		cameraPos.z -= 0.2;
+		camera_move.z -= 0.2;
+		break;
+	case '5':
+		cameraPos.z += 0.2;
+		camera_move.z += 0.2;
+		break;
+	case '4':
+		cameraPos.x -= 0.2;
+		camera_move.x -= 0.2;
+		break;
+	case '6':
+		cameraPos.x += 0.2;
+		camera_move.x += 0.2;
 		break;
 
-	case 'q':
-		exit(0);
-		break;
+
 	}
 
 	glutPostRedisplay();
@@ -812,15 +848,63 @@ void SpecialKeyboard(int key, int x, int y)
 
 	glutPostRedisplay();  // 재렌더링 요청
 }
+void Start_Wait() {
+	for (int i = 0;i < block.size();++i) {
+		if (block[i].size > 0) {
+			block[i].s.y += block[i].speed * 0.5f;
+			block[i].t.y += block[i].speed * 0.25f;	
+			--block[i].size;
+			if (block[i].size == 0)--block_start;
+		}
+	}
+	if (block_start == 0)start = true;
+}
+void U_D_animation() {
+	for (int i = 0;i < block.size();++i) {
+		int a = (r_m(gen) == 0 ? 1 : -1);
+		if (block[i].t.y < 3.0f)a = 1;
+		block[i].s.y += block[i].speed * 0.5f* a;
+		block[i].t.y += block[i].speed * 0.25f* a;
+		block[i].colors = { (block[i].colors.x + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.x + 0.01f)
+				,(block[i].colors.y + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.y + 0.01f)
+				,(block[i].colors.z + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.z + 0.01f) };
 
+	}
+}
+void D_animation() {
+	for (int i = 0;i < block.size();++i) {
+		if (block[i].t.y > 1.0f) {
+			block[i].s.y -= block[i].speed * 0.1f;
+			block[i].t.y -= block[i].speed * 0.05f;
+		}
+
+	}
+}
 void TimerFunction(int value)
 {
 	camera_move -= glm::vec3(ad_ * 0.5f, ws_ * 0.5f, pn_ * 0.5f);
 	
+	for (int i = 0;i < block.size();++i) {
+		glm::mat4 m = glm::mat4(1.0f);
+
+		m = glm::rotate(m, glm::radians(block[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		m = glm::translate(m, block[i].t);
+		m = glm::scale(m, block[i].s);
+		block[i].modelMat = m;
+	}
 
 
 	ad_ = ws_ = pn_ = 0;
-	if (!ani)glutTimerFunc(10, TimerFunction, 1);
+
+
+
+
+	if(!start)Start_Wait();
+	else {
+		if (v)D_animation();
+		else if (m)U_D_animation();
+	}
+	glutTimerFunc(10, TimerFunction, 1);
 	glutPostRedisplay();
 }
 
