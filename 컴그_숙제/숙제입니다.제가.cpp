@@ -21,6 +21,7 @@ GLvoid Reshape(int w, int h);
 void Mouse(int button, int state, int x, int y);
 void Motion(int x, int y);
 void Keyboard(unsigned char key, int x, int y);
+void Keyupboard(unsigned char key, int x, int y);
 void SpecialKeyboard(int key, int x, int y); // 특수 키(화살표) 처리 함수 선언
 void LoadOBJ(const char* filename);
 void InitBuffer();
@@ -332,18 +333,27 @@ int ws_ = 0;
 int ad_ = 0;
 int pn_ = 0;
 
+//카메라 각도
+float camera_x_angle = 0.0f;
+float camera_y_angle = 0.0f;
+
+//카메라 x고정
+bool camera_x_lock = false;
+
+
 //마우스
 bool left_mouse = false;
-int new_mousex, new_mousey;
-int old_mousex, old_mousey;
+bool right_mouse = false;
+int right_mousex, right_mousey;
+int left_mousex, left_mousey;
 float sense = 0.1f;
 
 //할거 8 7 5 6을 이용하여 카메라가 돌려져도 이동시키기 각도를 가져와서 ㄱㄱ
 
 
 //가로 세로 받는 변수
-int block_width = 25;
-int block_height = 25;
+int block_width = 0;
+int block_height = 0;
 int block_start = 0;
 
 //게임 시작 변수
@@ -369,6 +379,11 @@ GLfloat tranformy(int y) {
 
 //커비 zjql
 void InitData() {
+	block_width = 0;
+	block_height = 0;
+	//나중에 지워주센
+	block_width = 25;
+	block_height = 25;
 	while (block_width < 5 || block_height < 5 || block_width > 25 || block_height > 25) {
 		cout << "가로 길이와 세로 길이를 입력해주세요." << endl;
 		cout << "* 길이 제한 : 5 ~ 25 *" << endl;
@@ -461,6 +476,7 @@ int main(int argc, char** argv) {
 	glutMouseFunc(Mouse);
 	glutMotionFunc(Motion);
 	glutKeyboardFunc(Keyboard);
+	glutKeyboardUpFunc(Keyupboard);
 	glutSpecialFunc(SpecialKeyboard); // 특수 키(화살표) 함수 등록
 
 	glutMainLoop();
@@ -664,14 +680,18 @@ void Reshape(int w, int h) {
 void Mouse(int button, int state, int x, int y)
 {
 	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-		old_mousex =x, old_mousey = y;
+		left_mousex =x, left_mousey = y;
 		left_mouse = true;
 	}
 	if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
 		left_mouse = false;
 	}
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
-
+		right_mousex = x, right_mousey = y;
+		right_mouse = true;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
+		right_mouse = false;
 	}
 
 	glutPostRedisplay();
@@ -680,28 +700,55 @@ void Mouse(int button, int state, int x, int y)
 void Motion(int x, int y)
 {
 	if (left_mouse) {
-		int deltaX = x - old_mousex;
-		int deltaY = y - old_mousey;
+		int deltax = x - left_mousex;
+		int deltay = y - left_mousey;
 
 		
 
-		if (deltaX != 0) {
-			float angle = deltaX * sense;
+		if (deltax != 0) {
+			float angle = deltax * sense;
+			camera_x_angle += angle;
 			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
 			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
 		}
 
-		if (deltaY != 0) {
-			float angle = -deltaY * sense;
+		if (deltay != 0&& !camera_x_lock) {
+			float angle = -deltay * sense;
+			camera_y_angle += angle;
 			glm::vec3 c = cameraPos - camera_move;
 			glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
 			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
 			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
 		}
 
-		old_mousex = x;
-		old_mousey = y;
+		left_mousex = x;
+		left_mousey = y;
 
+
+
+		glutPostRedisplay();
+	}
+	if (right_mouse) {
+		int deltax = x - right_mousex;
+		int deltay = y - right_mousey;
+
+		if (deltax != 0) {
+			float angle = deltax * 0.05f;
+			glm::vec3 right = glm::normalize(glm::cross(camera_move - cameraPos, glm::vec3(0.0f, 1.0f, 0.0f)));
+			camera_move += right * angle;
+		}
+
+		if (deltay != 0) {
+			float moveAmount = -deltay * 0.05f;
+			glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+			glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+			glm::vec3 up = glm::normalize(glm::cross(right, forward));
+			camera_move += up * moveAmount;
+		}
+
+
+		right_mousex = x;
+		right_mousey = y;
 		glutPostRedisplay();
 	}
 }
@@ -718,7 +765,17 @@ void camera_y_rotate(bool b) {
 	
 	cameraPos = glm::vec3(m * glm::vec4(cameraPos, 1.0f));
 }
-
+void camera_wasd(char i){
+	switch (i) {
+	case 'w':
+	{
+		glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+		cameraPos += forward * 0.1f;
+		camera_move += forward * 0.1f;
+		break;
+	}
+	}
+}
 void Keyboard(unsigned char key, int x, int y)
 {
 	if(start)
@@ -810,7 +867,9 @@ void Keyboard(unsigned char key, int x, int y)
 		cameraPos.x += 0.2;
 		camera_move.x += 0.2;
 		break;
-
+	case 't':
+		camera_x_lock = true;
+		break;
 
 	}
 
@@ -848,6 +907,14 @@ void SpecialKeyboard(int key, int x, int y)
 
 	glutPostRedisplay();  // 재렌더링 요청
 }
+void Keyupboard(unsigned char key, int x, int y) {
+	switch (key) {
+	case 't':
+		camera_x_lock = false;;
+		break;
+	}
+}
+
 void Start_Wait() {
 	for (int i = 0;i < block.size();++i) {
 		if (block[i].size > 0) {
