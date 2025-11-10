@@ -20,6 +20,7 @@ GLvoid DrawScene();
 GLvoid Reshape(int w, int h);
 void Mouse(int button, int state, int x, int y);
 void Motion(int x, int y);
+void MouseWheel(int wheel, int direction, int x, int y);
 void Keyboard(unsigned char key, int x, int y);
 void Keyupboard(unsigned char key, int x, int y);
 void SpecialKeyboard(int key, int x, int y); // 특수 키(화살표) 처리 함수 선언
@@ -154,6 +155,12 @@ public:
 	int size = 0;
 	float speed = 0.0f;
 	float angle = 0.0f;
+
+	bool isWall = false;      // 벽인지 여부
+	bool isStart = false;     // 시작점인지
+	bool isEnd = false;       // 도착점인지
+	bool visited = false;     // 미로 생성 시 방문 여부
+
 	Block(Model model, int size_,float speed_) {
 		vertexData.clear();
 		InitBuffer(model);
@@ -359,7 +366,8 @@ int block_start = 0;
 //게임 시작 변수
 bool start = false;
 
-
+// 미로 관련 변수
+bool maze_generated = false;
 
 
 //명령어 라스트 커멘드
@@ -376,6 +384,123 @@ GLfloat tranformy(int y) {
 	return ((height - (float)y) / (height / 2)) - 1.0f;
 }
 
+
+// 미로 생성 함수
+void GenerateMaze() {
+	// 모든 블록을 벽으로 초기화
+	for (int i = 0; i < block.size(); ++i) {
+		block[i].isWall = true;
+		block[i].isStart = false;
+		block[i].isEnd = false;
+		block[i].visited = false;
+		block[i].colors = glm::vec3(0.2f, 0.2f, 0.2f); // 어두운 회색 (벽)
+	}
+
+	// 블록 인덱스를 (x, z) 좌표로 변환하는 람다 함수
+	auto getIndex = [](int x, int z) -> int {
+		return z * block_width + x;
+		};
+
+	// DFS를 이용한 미로 생성
+	stack<pair<int, int>> dfs_stack;
+
+	// 시작점 설정: 왼쪽 아래에서 두 번째 (1, 1)
+	int start_x = 1;
+	int start_z = 1;
+
+	dfs_stack.push({ start_x, start_z });
+	int idx = getIndex(start_x, start_z);
+	block[idx].isWall = false;
+	block[idx].visited = true;
+	block[idx].isStart = true;
+	block[idx].colors = glm::vec3(0.0f, 1.0f, 0.0f); // 초록색 (시작점)
+
+	// 방향 벡터: 상하좌우
+	int dx[] = { 0, 0, -2, 2 };
+	int dz[] = { -2, 2, 0, 0 };
+
+	while (!dfs_stack.empty()) {
+		// C++14 호환: structured binding 대신 pair 사용
+		pair<int, int> current = dfs_stack.top();
+		int cx = current.first;
+		int cz = current.second;
+
+		// 이동 가능한 방향 찾기
+		vector<int> directions;
+		for (int i = 0; i < 4; ++i) {
+			int nx = cx + dx[i];
+			int nz = cz + dz[i];
+
+			// 범위 체크 및 방문 여부 확인
+			if (nx >= 0 && nx < block_width && nz >= 0 && nz < block_height) {
+				int nidx = getIndex(nx, nz);
+				if (!block[nidx].visited) {
+					directions.push_back(i);
+				}
+			}
+		}
+
+		if (directions.empty()) {
+			dfs_stack.pop();
+		}
+		else {
+			// 랜덤하게 방향 선택
+			uniform_int_distribution<int> dir_dist(0, directions.size() - 1);
+			int dir = directions[dir_dist(gen)];
+
+			int nx = cx + dx[dir];
+			int nz = cz + dz[dir];
+			int nidx = getIndex(nx, nz);
+
+			// 중간 벽 제거
+			int mx = cx + dx[dir] / 2;
+			int mz = cz + dz[dir] / 2;
+			int midx = getIndex(mx, mz);
+
+			block[midx].isWall = false;
+			block[midx].visited = true;
+			block[midx].colors = glm::vec3(0.8f, 0.8f, 0.8f); // 밝은 회색 (길)
+
+			block[nidx].isWall = false;
+			block[nidx].visited = true;
+			block[nidx].colors = glm::vec3(0.8f, 0.8f, 0.8f); // 밝은 회색 (길)
+
+			dfs_stack.push({ nx, nz });
+		}
+	}
+
+	// 도착점 설정: 위쪽 가장자리에서 랜덤하게 선택 (꼭짓점 제외)
+	vector<int> possible_ends;
+	for (int x = 2; x < block_width - 2; x += 2) { // 꼭짓점 제외
+		int z = block_height - 2;
+		int idx = getIndex(x, z);
+		if (!block[idx].isWall) {
+			possible_ends.push_back(idx);
+		}
+	}
+
+	if (!possible_ends.empty()) {
+		uniform_int_distribution<int> end_dist(0, possible_ends.size() - 1);
+		int end_idx = possible_ends[end_dist(gen)];
+		block[end_idx].isEnd = true;
+		block[end_idx].colors = glm::vec3(1.0f, 0.0f, 0.0f); // 빨간색 (도착점)
+	}
+
+	// 벽 높이 조정
+	for (int i = 0; i < block.size(); ++i) {
+		if (block[i].isWall) {
+			block[i].s.y = 2.0f; // 벽은 높게
+			block[i].t.y = 1.0f;
+		}
+		else {
+			block[i].s.y = 0.1f; // 길은 낮게
+			block[i].t.y = 0.0f;
+		}
+	}
+
+	maze_generated = true;
+
+}
 
 //커비 zjql
 void InitData() {
@@ -475,6 +600,7 @@ int main(int argc, char** argv) {
 	glutReshapeFunc(Reshape);
 	glutMouseFunc(Mouse);
 	glutMotionFunc(Motion);
+	glutMouseWheelFunc(MouseWheel);
 	glutKeyboardFunc(Keyboard);
 	glutKeyboardUpFunc(Keyupboard);
 	glutSpecialFunc(SpecialKeyboard); // 특수 키(화살표) 함수 등록
@@ -693,6 +819,7 @@ void Mouse(int button, int state, int x, int y)
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
 		right_mouse = false;
 	}
+	
 
 	glutPostRedisplay();
 
@@ -752,7 +879,21 @@ void Motion(int x, int y)
 		glutPostRedisplay();
 	}
 }
+void MouseWheel(int wheel, int direction, int x, int y)
+{
+	float zoomSpeed = 2.0f;
 
+	glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+
+	if (direction > 0) {
+		cameraPos += forward * zoomSpeed;
+	}
+	else {
+		cameraPos -= forward * zoomSpeed;
+	}
+
+	glutPostRedisplay();
+}
 void camera_y_rotate(bool b) {
 	glm::mat4 m = glm::mat4(1.0f);
 	
@@ -812,7 +953,7 @@ void Keyboard(unsigned char key, int x, int y)
 	camera_y_rotate(false);
 	break;
 	case 'r':
-
+	GenerateMaze();
 	break;
 	case 'v':
 	v = !v;
@@ -966,10 +1107,12 @@ void TimerFunction(int value)
 
 
 
-	if(!start)Start_Wait();
-	else {
-		if (v)D_animation();
-		else if (m)U_D_animation();
+	if (!maze_generated) {
+		if (!start)Start_Wait();
+		else {
+			if (v)D_animation();
+			else if (m)U_D_animation();
+		}
 	}
 	glutTimerFunc(10, TimerFunction, 1);
 	glutPostRedisplay();
