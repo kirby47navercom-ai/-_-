@@ -1,4 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS //--- ÇÁ·Î±×·¥ ¸Ç ¾Õ¿¡ ¼±¾ğÇÒ °Í
+ï»¿#define _CRT_SECURE_NO_WARNINGS //--- í”„ë¡œê·¸ë¨ ë§¨ ì•ì— ì„ ì–¸í•  ê²ƒ
 
 #include <gl/glew.h>
 #include <gl/freeglut.h>
@@ -10,8 +10,9 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "dtd.h" 
+#define ROBOT 7
 #define SIZE 800
-// ÇÔ¼ö ¼±¾ğ
+// í•¨ìˆ˜ ì„ ì–¸
 void MakeVertexShaders();
 void MakeFragmentShaders();
 GLuint MakeShaderProgram();
@@ -20,17 +21,23 @@ GLvoid DrawScene();
 GLvoid Reshape(int w, int h);
 void Mouse(int button, int state, int x, int y);
 void Motion(int x, int y);
+void MouseWheel(int wheel, int direction, int x, int y);
 void Keyboard(unsigned char key, int x, int y);
 void Keyupboard(unsigned char key, int x, int y);
-void SpecialKeyboard(int key, int x, int y); // Æ¯¼ö Å°(È­»ìÇ¥) Ã³¸® ÇÔ¼ö ¼±¾ğ
+void SpecialKeyboard(int key, int x, int y); // íŠ¹ìˆ˜ í‚¤(í™”ì‚´í‘œ) ì²˜ë¦¬ í•¨ìˆ˜ ì„ ì–¸
 void LoadOBJ(const char* filename);
 void InitBuffer();
 void make_vertexShaders();
 void make_fragmentShaders();
 GLuint make_shaderProgram();
 void TimerFunction(int value);
+void GenerateMaze();
+void Initrobot();
+void updaterobot();
+void PassiveMotion(int x, int y);
 GLchar* filetobuf(const char* file);
-// Àü¿ª º¯¼ö
+
+// ì „ì—­ ë³€ìˆ˜
 GLint width = 1000, height = 1000;
 GLuint shaderProgramID, vertexShader, fragmentShader;
 GLuint VAO, VBO, EBO;
@@ -40,9 +47,22 @@ mt19937 gen(rd());
 uniform_real_distribution<float> r_speed(0.1f, 0.2f);
 uniform_int_distribution<int> r_size(50, 100);
 uniform_int_distribution<int> r_m(0, 1);
+uniform_real_distribution<float> r_color(0.0f, 1.0f);
 
 
-
+/*
+ç°åœ¨ç«‹åˆ»åŠ¨èº«, è°ä¹Ÿä¸å—ä¼¤ä¸ç„¶ä½ ä»¬éƒ½æ­»å®šäº†, ä¾¦æ¢æ¸¸æˆä¹Ÿç©å®Œäº†å›åˆ°ç°å®
+ä¸­ä¸è¦å¿˜è®°ä¼ è¾¾è¯´StellaronçŒäººé€ä½ ä»¬æœ€åä¸€ç¨‹çš„äº‹å®ï¼Œè¿™æ˜¯æ‰«è¡å¼€å§‹è¡Œ
+åŠ¨å‘˜æ‰§è¡Œç›®æ ‡å›ºå®šï¼Œç«‹å³é€šè¿‡å¤„å†³åè®®ï¼Œæ‰“ç ´ç„¦åœŸä½œæˆ˜æ‰§è¡Œï¼Œç­‰äº†å¾ˆä¹…ã€‚æˆ‘
+ä»¬ä»¥å‰è§è¿‡å§ æˆ‘æ˜¯å²æ³°æ‹‰é¾™çŒäººå±±å§†è™½ç„¶å¾ˆæ—©å°±å‡ºç°åœ¨ä½ é¢å‰æƒ³å‘Šè¯‰å¤§å®¶
+äº‹å®ï¼Œä½†æ˜¯æ¯”é¢„æƒ³çš„è¦å¤šå¾ˆå¤šï¼Œå°è¯•äº†åä¸€æ¬¡ï¼Œä½†æ˜¯éƒ½ä»¥å¤±è´¥å‘Šç»ˆã€‚åœ¨è¿™æœŸ
+é—´ï¼Œæˆ‘ä¸çŸ¥ä¸è§‰åœ°ä¸è¿™ä¸ªä¸–ç•Œæœ‰ç€åƒä¸ä¸‡ç¼•çš„è”ç³»ï¼Œæ— æ³•æ‘†è„±å‰§æœ¬çš„æŸç¼šã€‚
+æ­£å¦‚åŸƒåˆ©å¥¥æ‰€è¯´ï¼Œæˆ‘ä»¬åœ¨è¿™æ¢¦æƒ³çš„åœŸåœ°ä¸Šä¼šæ”¶è·éš¾å¿˜çš„æ”¶è·ã€‚å¯¹äºæ™ºå¨œæ¥
+è¯´ï¼Œæ²¡æœ‰åƒä»–å’Œå¡å¤«å¡ä¸€æ ·æ´å¯Ÿäººå¿ƒçš„æ´å¯ŸåŠ›å’Œåƒå¸ƒè±å¾·ä¸€æ ·å‡ºè‰²çš„ç‰¹æŠ€ã€‚
+æˆ‘æ“…é•¿çš„ä¸œè¥¿å¤§å¤šé€‚ç”¨äºä¸å¿…å¯æ€œçš„åæ´¾, æ‰€ä»¥æˆ‘èƒ½ç”¨çš„æ‰‹æ®µä¹Ÿåªæœ‰ä¸€ä¸ªæ˜¯
+ä¸ºäº†ç»™ä½ çœ‹æˆ‘åœ°å…¨éƒ¨åƒè¤ç«è™«ä¸€æ ·åšå¥½æ­»äº¡åœ°å‡†å¤‡è·³å…¥ç«æµ·ä¸­ç”Ÿæ´»å¸Œæœ›åœ¨æ¸…
+é†’åœ°ç°å®ä¸­å†æ¬¡ç›¸è§
+*/
 
 
 typedef struct {
@@ -56,10 +76,12 @@ typedef struct {
 	size_t vertex_count;
 	Face* faces;
 	size_t face_count;
+	vector<glm::vec3> normals;
 } Model;
 class Shape {
 public:
 	vector<GLfloat> vertexData;
+	vector<GLfloat> normalData;
 	vector<GLuint> indices;
 	glm::vec3 t = { 0.0f,0.0f,0.0f };
 	glm::vec3 s = { 1.0f,1.0f,1.0f };
@@ -77,46 +99,32 @@ public:
 
 	void InitBuffer(Model model) {
 		vertexData.clear();
-		// ¸ğµç faceÀÇ ²ÀÁşÁ¡ ÁÂÇ¥¸¦ Áßº¹ Æ÷ÇÔÇØ¼­ vertexData¿¡ Ãß°¡
+		// ëª¨ë“  faceì˜ ê¼­ì§“ì  ì¢Œí‘œë¥¼ ì¤‘ë³µ í¬í•¨í•´ì„œ vertexDataì— ì¶”ê°€
 		for (size_t i = 0; i < model.face_count; ++i) {
 			Face f = model.faces[i];
 			Vertex v1 = model.vertices[f.v1];
 			Vertex v2 = model.vertices[f.v2];
 			Vertex v3 = model.vertices[f.v3];
-			// Ã¹ ¹øÂ° ²ÀÁşÁ¡
+			// ì²« ë²ˆì§¸ ê¼­ì§“ì 
 			vertexData.push_back(v1.x);
 			vertexData.push_back(v1.y);
 			vertexData.push_back(v1.z);
-			// µÎ ¹øÂ° ²ÀÁşÁ¡
+			// ë‘ ë²ˆì§¸ ê¼­ì§“ì 
 			vertexData.push_back(v2.x);
 			vertexData.push_back(v2.y);
 			vertexData.push_back(v2.z);
-			// ¼¼ ¹øÂ° ²ÀÁşÁ¡
+			// ì„¸ ë²ˆì§¸ ê¼­ì§“ì 
 			vertexData.push_back(v3.x);
 			vertexData.push_back(v3.y);
 			vertexData.push_back(v3.z);
 		}
-		// ÀÎµ¦½º´Â ÇÊ¿ä ¾øÀ¸¹Ç·Î ºñ¿öµÓ´Ï´Ù
+		for (size_t i = 0; i < model.normals.size(); ++i) {
+			normalData.push_back(model.normals[i].x);
+			normalData.push_back(model.normals[i].y);
+			normalData.push_back(model.normals[i].z);
+		}
+		// ì¸ë±ìŠ¤ëŠ” í•„ìš” ì—†ìœ¼ë¯€ë¡œ ë¹„ì›Œë‘¡ë‹ˆë‹¤
 		indices.clear();
-	}
-	void Update(Model model) {
-		//vertexData.clear();
-		//for(size_t i = 0; i < model.vertex_count; ++i) {
-		//	Vertex v = model.vertices[i];
-		//	// OBJ ÁÂÇ¥¸¦ OpenGL¿¡ ¸Â°Ô »ç¿ë (½ºÄÉÀÏ¸µ Á¦°Å, 0~1 ¹üÀ§ ±×´ë·Î)
-		//	float x = v.x;
-		//	float y = v.y;
-		//	float z = v.z;
-		//	vertexData.push_back(x);
-		//	vertexData.push_back(y);
-		//	vertexData.push_back(z);
-		//}
-		//indices.clear();
-		//for(size_t i = 0; i < model.face_count; ++i) {
-		//	indices.push_back(model.faces[i].v1);
-		//	indices.push_back(model.faces[i].v2);
-		//	indices.push_back(model.faces[i].v3);
-		//}
 	}
 	void ColorRandom(Model model) {
 		colors = { 0.0f,0.0f,0.0f };
@@ -127,17 +135,6 @@ public:
 		colors = glm::vec3(r, g, b);
 
 	}
-	glm::vec3 Center() {
-		glm::vec3 center(0.0f);
-		for (int i = 0; i < vertexData.size() / 3; ++i) {
-			center.x += vertexData[i * 3 + 0];
-			center.y += vertexData[i * 3 + 1];
-			center.z += vertexData[i * 3 + 2];
-		}
-		center /= static_cast<float>(vertexData.size() / 3);
-		return center;
-	}
-
 
 };
 vector<Shape>shape;
@@ -145,15 +142,20 @@ vector<Shape>shape;
 class Block {
 public:
 	vector<GLfloat> vertexData;
+	vector<GLfloat> normalData;
 	vector<GLuint> indices;
 	glm::vec3 t = { 0.0f,0.0f,0.0f };
 	glm::vec3 s = { 1.0f,1.0f,1.0f };
 	glm::vec3 r = { 0.0f,0.0f,0.0f };
 	glm::vec3 colors;
 	glm::mat4 modelMat = glm::mat4(1.0f);
+	string name;
+	bool line = false;
 	int size = 0;
 	float speed = 0.0f;
 	float angle = 0.0f;
+	bool start = false;
+	bool end = false;
 	Block(Model model, int size_,float speed_) {
 		vertexData.clear();
 		InitBuffer(model);
@@ -168,40 +170,27 @@ public:
 			Vertex v1 = model.vertices[f.v1];
 			Vertex v2 = model.vertices[f.v2];
 			Vertex v3 = model.vertices[f.v3];
-			// Ã¹ ¹øÂ° ²ÀÁşÁ¡
+			// ì²« ë²ˆì§¸ ê¼­ì§“ì 
 			vertexData.push_back(v1.x);
 			vertexData.push_back(v1.y);
 			vertexData.push_back(v1.z);
-			// µÎ ¹øÂ° ²ÀÁşÁ¡
+			// ë‘ ë²ˆì§¸ ê¼­ì§“ì 
 			vertexData.push_back(v2.x);
 			vertexData.push_back(v2.y);
 			vertexData.push_back(v2.z);
-			// ¼¼ ¹øÂ° ²ÀÁşÁ¡
+			// ì„¸ ë²ˆì§¸ ê¼­ì§“ì 
 			vertexData.push_back(v3.x);
 			vertexData.push_back(v3.y);
 			vertexData.push_back(v3.z);
 		}
+		for (size_t i = 0; i < model.normals.size(); ++i) {
+			normalData.push_back(model.normals[i].x);
+			normalData.push_back(model.normals[i].y);
+			normalData.push_back(model.normals[i].z);
+		}
 		indices.clear();
 	}
-	void Update(Model model) {
-		//vertexData.clear();
-		//for(size_t i = 0; i < model.vertex_count; ++i) {
-		//	Vertex v = model.vertices[i];
-		//	// OBJ ÁÂÇ¥¸¦ OpenGL¿¡ ¸Â°Ô »ç¿ë (½ºÄÉÀÏ¸µ Á¦°Å, 0~1 ¹üÀ§ ±×´ë·Î)
-		//	float x = v.x;
-		//	float y = v.y;
-		//	float z = v.z;
-		//	vertexData.push_back(x);
-		//	vertexData.push_back(y);
-		//	vertexData.push_back(z);
-		//}
-		//indices.clear();
-		//for(size_t i = 0; i < model.face_count; ++i) {
-		//	indices.push_back(model.faces[i].v1);
-		//	indices.push_back(model.faces[i].v2);
-		//	indices.push_back(model.faces[i].v3);
-		//}
-	}
+
 	void ColorRandom(Model model) {
 		colors = { 0.0f,0.0f,0.0f };
 
@@ -212,7 +201,18 @@ public:
 
 	}
 };
+
+
 vector<Block>block;
+vector<Shape>robot;
+
+class RobotBounds {
+public:
+	glm::vec3 center = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 halfExtents = { 0.0f, 0.0f, 0.0f };
+};
+RobotBounds robotbb;
+
 void read_newline(char* str) {
 	char* pos;
 	if ((pos = strchr(str, '\n')) != NULL)
@@ -224,83 +224,102 @@ Model read_obj_file(const char* filename) {
 	FILE* file;
 	Model model{};
 
-	// ÆÄÀÏ ¿­±â (fopen_s¸¦ »ç¿ëÇÏ¹Ç·Î Visual Studio È¯°æ¿¡ ÀûÇÕ)
+	// íŒŒì¼ ì—´ê¸° (fopen_së¥¼ ì‚¬ìš©í•˜ë¯€ë¡œ Visual Studio í™˜ê²½ì— ì í•©)
 	fopen_s(&file, filename, "r");
 	if (!file) {
 		perror("Error opening file");
 		exit(EXIT_FAILURE);
 	}
 
-	// ÀÓ½Ã º¤ÅÍ¸¦ »ç¿ëÇÏ¿© µ¿ÀûÀ¸·Î Á¤Á¡ ¹× ¸é µ¥ÀÌÅÍ¸¦ ÀúÀåÇÕ´Ï´Ù.
+	// ì„ì‹œ ë²¡í„°ë¥¼ ì‚¬ìš©í•˜ì—¬ ë™ì ìœ¼ë¡œ ì •ì  ë° ë©´ ë°ì´í„°ë¥¼ ì €ì¥í•©ë‹ˆë‹¤.
 	std::vector<Vertex> temp_vertices;
+	std::vector<glm::vec3> temp_normals;
 	std::vector<Face> temp_faces;
 
 	char line[365];
 	while (fgets(line, sizeof(line), file)) {
 		read_newline(line);
 
-		// v ¶óÀÎ Ã³¸®
+		// v ë¼ì¸ ì²˜ë¦¬ (ì •ì )
 		if (line[0] == 'v' && line[1] == ' ') {
 			Vertex v;
 			if (sscanf_s(line + 2, "%f %f %f", &v.x, &v.y, &v.z) == 3) {
 				temp_vertices.push_back(v);
 			}
 		}
-		// f ¶óÀÎ Ã³¸® - N°¢ÇüÀ» »ï°¢ ºĞÇÒ(Triangulation)ÇÕ´Ï´Ù.
+		// vn ë¼ì¸ ì²˜ë¦¬ (ë…¸ë©€ ë²¡í„°)
+		else if (line[0] == 'v' && line[1] == 'n' && line[2] == ' ') {
+			glm::vec3 normal;
+			if (sscanf_s(line + 3, "%f %f %f", &normal.x, &normal.y, &normal.z) == 3) {
+				temp_normals.push_back(normal);
+			}
+		}
+		// f ë¼ì¸ ì²˜ë¦¬ - v//vn í˜•ì‹ (f 1//2 7//2 5//2)
 		else if (line[0] == 'f' && line[1] == ' ') {
 			char face_str[365];
-			// ¿øº» ¶óÀÎÀ» ÈÑ¼ÕÇÏÁö ¾Ê±â À§ÇØ º¹»ç (strtok »ç¿ëÀ» À§ÇÔ)
-			// 'Á¦¸ñ ¾øÀ½.obj' ÆÄÀÏÀÌ 'f v1 v2 v3 v4...' Çü½ÄÀÌ¶ó°í °¡Á¤ÇÕ´Ï´Ù.
 			if (strlen(line + 2) >= sizeof(face_str)) {
-				// ¹öÆÛ ¿À¹öÇÃ·Î¿ì ¹æÁö (ÇÊ¿ä ½Ã ´õ Å« ¹öÆÛ »ç¿ë)
 				continue;
 			}
 			strcpy_s(face_str, sizeof(face_str), line + 2);
 
-			// strtok¸¦ »ç¿ëÇÏ¿© °ø¹éÀ¸·Î ºĞ¸®µÈ °¢ Á¤Á¡ µ¥ÀÌÅÍ¸¦ °¡Á®¿É´Ï´Ù.
+			// strtokë¥¼ ì‚¬ìš©í•˜ì—¬ ê³µë°±ìœ¼ë¡œ ë¶„ë¦¬ëœ ê° ì •ì  ë°ì´í„°ë¥¼ ê°€ì ¸ì˜µë‹ˆë‹¤.
 			char* token = strtok(face_str, " ");
-			std::vector<unsigned int> face_indices; // ¸éÀ» ÀÌ·ç´Â Á¤Á¡ ÀÎµ¦½º ÀúÀå
+			std::vector<unsigned int> face_indices; // ì •ì  ì¸ë±ìŠ¤
+			std::vector<unsigned int> normal_indices; // ë…¸ë©€ ì¸ë±ìŠ¤
 
-			// ÅäÅ«(Á¤Á¡ ÀÎµ¦½º)À» ÀĞ½À´Ï´Ù.
+
 			while (token != NULL) {
-				unsigned int v_idx;
+				unsigned int v_idx = 0, vn_idx = 0;
 
-				// v/vt/vn ÇüÅÂÀÏ °æ¿ì, Ã¹ '/' ÀÌÀüÀÇ v¸¸ ÆÄ½Ì
+
 				if (strchr(token, '/') != NULL) {
-					// v/vt/vn ÇüÅÂÀÏ °æ¿ì, Ã¹ '/' ÀÌÀüÀÇ v¸¸ ÆÄ½Ì
-					if (sscanf_s(token, "%u", &v_idx) == 1) {
-						face_indices.push_back(v_idx - 1); // 1-based index¸¦ 0-based index·Î º¯È¯
+					if (sscanf_s(token, "%u//%u", &v_idx, &vn_idx) == 2) {
+						face_indices.push_back(v_idx - 1);
+						normal_indices.push_back(vn_idx - 1);
+					}
+	
+					else if (sscanf_s(token, "%u/%*u/%u", &v_idx, &vn_idx) == 2) {
+						face_indices.push_back(v_idx - 1);
+						normal_indices.push_back(vn_idx - 1);
+					}
+		
+					else if (sscanf_s(token, "%u", &v_idx) == 1) {
+						face_indices.push_back(v_idx - 1);
+						normal_indices.push_back(0); // ê¸°ë³¸ ë…¸ë©€
 					}
 				}
 				else {
-					// v ÇüÅÂÀÏ °æ¿ì, v¸¸ ÆÄ½Ì
+		
 					if (sscanf_s(token, "%u", &v_idx) == 1) {
-						face_indices.push_back(v_idx - 1); // 1-based index¸¦ 0-based index·Î º¯È¯
+						face_indices.push_back(v_idx - 1);
+						normal_indices.push_back(0); // ê¸°ë³¸ ë…¸ë©€
 					}
 				}
 				token = strtok(NULL, " ");
 			}
 
-			// N°¢Çü(N >= 3) ¸éÀ» »ï°¢ ºĞÇÒ(Fan Triangulation)ÇÏ¿© ÀúÀåÇÕ´Ï´Ù.
+	
 			if (face_indices.size() >= 3) {
-				// 0¹ø ÀÎµ¦½º¸¦ Áß½ÉÀ¸·Î »ï°¢ÇüÀ» ¸¸µì´Ï´Ù. (0, 1, 2), (0, 2, 3), (0, 3, 4)...
-				for (size_t i = 1; i < face_indices.size() - 1; ++i) {
-					Face f;
-					f.v1 = face_indices[0]; // Áß½ÉÁ¡
-					f.v2 = face_indices[i];
-					f.v3 = face_indices[i + 1];
-					temp_faces.push_back(f);
+		
+				Face f;
+				f.v1 = face_indices[0];
+				f.v2 = face_indices[1];
+				f.v3 = face_indices[2];
+				temp_faces.push_back(f);
+
+				if (normal_indices.size() >= 3) {
+					model.normals.push_back(temp_normals[normal_indices[0]]);
+					model.normals.push_back(temp_normals[normal_indices[1]]);
+					model.normals.push_back(temp_normals[normal_indices[2]]);
 				}
 			}
 		}
 	}
 	fclose(file);
 
-	// ÃÖÁ¾ÀûÀ¸·Î ¸ğµ¨ ±¸Á¶Ã¼¿¡ µ¿Àû ÇÒ´ç ¹× º¹»çÇÕ´Ï´Ù.
 	model.vertex_count = temp_vertices.size();
 	model.face_count = temp_faces.size();
 
-	// ±âÁ¸ ÄÚµå°¡ malloc/free¸¦ »ç¿ëÇÏ¹Ç·Î ÀÌ ¹æ½ÄÀ» À¯ÁöÇÕ´Ï´Ù.
 	model.vertices = (Vertex*)malloc(model.vertex_count * sizeof(Vertex));
 	model.faces = (Face*)malloc(model.face_count * sizeof(Face));
 
@@ -314,58 +333,106 @@ Model read_obj_file(const char* filename) {
 	return model;
 }
 
+bool CheckCollision(const glm::vec3& robotPos, const glm::vec3& robotHalf, const Block& wall) {
+	glm::vec3 wallCenter = wall.t;
+	glm::vec3 wallHalf = wall.s * 0.5f;
+
+	float distX = std::abs(robotPos.x - wallCenter.x);
+	bool collisionX = distX < (robotHalf.x + wallHalf.x);
+
+	float distY = std::abs(robotPos.y - wallCenter.y);
+	bool collisionY = distY < (robotHalf.y + wallHalf.y);
+
+	float distZ = std::abs(robotPos.z - wallCenter.z);
+	bool collisionZ = distZ < (robotHalf.z + wallHalf.z);
+
+	return collisionX && collisionY && collisionZ;
+}
+
 vector<Model> model;
 int facenum = -1;
 int modelType = 0; // 0: Cube, 1: Cone
-bool allFaceDraw = true; // true: ÀüÃ¼ ¸é ±×¸®±â, false: ÇÑ ¸é¾¿ ±×¸®±â
+bool allFaceDraw = true; // true: ì „ì²´ ë©´ ê·¸ë¦¬ê¸°, false: í•œ ë©´ì”© ê·¸ë¦¬ê¸°
 
-//¼÷Á¦¿¡¼­ ¾µ º¯¼öµé ÄÚµå ³×ÀÓ È²È¥ ghkdghs
-//Ä«¸Ş¶ó
+//ìˆ™ì œì—ì„œ ì“¸ ë³€ìˆ˜ë“¤ ì½”ë“œ ë„¤ì„ í™©í˜¼ ghkdghs
+//ì¹´ë©”ë¼
 glm::vec3 cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
-glm::vec3 modelPos = glm::vec3(0.0f, 0.0f, 0.0f);  // µµÇü À§Ä¡ (X, Y, Z ÀÌµ¿·®)
+glm::vec3 modelPos = glm::vec3(0.0f, 0.0f, 0.0f);  // ë„í˜• ìœ„ì¹˜ (X, Y, Z ì´ë™ëŸ‰)
 glm::vec3 camera_move = glm::vec3(0.0f, 0.0f, 0.0f); 
 
 
 int shape_check = 0;
 
-//Ä«¸Ş¶ó ¹«ºê
+//ì¹´ë©”ë¼ ë¬´ë¸Œ
 int ws_ = 0;
 int ad_ = 0;
 int pn_ = 0;
 
-//Ä«¸Ş¶ó °¢µµ
+//ì¹´ë©”ë¼ ê°ë„
 float camera_x_angle = 0.0f;
 float camera_y_angle = 0.0f;
 
-//Ä«¸Ş¶ó x°íÁ¤
+//ì¹´ë©”ë¼ xê³ ì •
 bool camera_x_lock = false;
 
 
-//¸¶¿ì½º
+//ë§ˆìš°ìŠ¤
 bool left_mouse = false;
 bool right_mouse = false;
 int right_mousex, right_mousey;
 int left_mousex, left_mousey;
 float sense = 0.1f;
 
-//ÇÒ°Å 8 7 5 6À» ÀÌ¿ëÇÏ¿© Ä«¸Ş¶ó°¡ µ¹·ÁÁ®µµ ÀÌµ¿½ÃÅ°±â °¢µµ¸¦ °¡Á®¿Í¼­ ¤¡¤¡
+//í• ê±° 8 7 5 6ì„ ì´ìš©í•˜ì—¬ ì¹´ë©”ë¼ê°€ ëŒë ¤ì ¸ë„ ì´ë™ì‹œí‚¤ê¸° ê°ë„ë¥¼ ê°€ì ¸ì™€ì„œ ã„±ã„±
 
 
-//°¡·Î ¼¼·Î ¹Ş´Â º¯¼ö
+//ê°€ë¡œ ì„¸ë¡œ ë°›ëŠ” ë³€ìˆ˜
 int block_width = 0;
 int block_height = 0;
 int block_start = 0;
 
-//°ÔÀÓ ½ÃÀÛ º¯¼ö
+//ê²Œì„ ì‹œì‘ ë³€ìˆ˜
 bool start = false;
 
+//ì€ë©´ì œê±° ë³€ìˆ˜
+bool silver = false;
 
 
-
-//¸í·É¾î ¶ó½ºÆ® Ä¿¸àµå
+//ëª…ë ¹ì–´ ë¼ìŠ¤íŠ¸ ì»¤ë©˜ë“œ
 bool op = false;
 bool m = false;
 bool v = false;
+
+//ë¯¸ë¡œ ë³€ìˆ˜
+bool maze = false;
+
+//ë¹› ìƒ‰ê¹”
+glm::vec3 light_color(1.0f);
+
+//ê°ì²´ ì†Œí™˜
+bool recall = false;
+
+
+//ì‹œì 
+int view = 0; // 0 ì „ì²´ 1 ìºë¦­í„° 1ì¸ì¹­ 2 ìºë¦­í„° 2ì¸ì¹­ 3 ìºë¦­í„° 3ì¸ì¹­
+
+//ì‹œì‘ ìœ„ì¹˜
+glm::vec3 start_pos = glm::vec3(0.0f, 0.0f, 0.0f);
+
+//ë¡œë´‡ ë³€ìˆ˜ë“¤
+float speed = 0.01f;
+
+//ì‹œì  ì „í™˜ ëì„ ë•Œ ë§ˆìš°ìŠ¤ë¡œ ë‹¤ ë³´ê¸° ê°€ëŠ¥
+bool view_change = false;
+
+
+//ë§ˆìš°ìŠ¤ ê³ ì • ì ì‹œ í’€ê¸°
+bool g = false;
+
+
+//ìºë¦­í„°ê°€ ìœ„ì¹˜í•œ ë°œíŒì€ ê²€ì •ìƒ‰ì´ ë˜ê²Œ ã„±ã„±
+
+
 
 
 
@@ -377,17 +444,33 @@ GLfloat tranformy(int y) {
 }
 
 
-//Ä¿ºñ zjql
+//ì»¤ë¹„ zjql
 void InitData() {
-	block_width = 0;
-	block_height = 0;
-	//³ªÁß¿¡ Áö¿öÁÖ¼¾
-	block_width = 25;
-	block_height = 25;
+	view = 0;
+	camera_x_angle = 0.0f;
+	camera_y_angle = 0.0f;
+	maze = false;
+	start = false;
+	recall = false;
+	light_color = glm::vec3(1.0f);
+	robot.clear();
+	cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
+	modelPos = glm::vec3(0.0f, 0.0f, 0.0f);  // ë„í˜• ìœ„ì¹˜ (X, Y, Z ì´ë™ëŸ‰)
+	camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
+	//block_width = 0;
+	//block_height = 0;
+	//ë‚˜ì¤‘ì— ì§€ì›Œì£¼ì„¼
+	block_width = 5;
+	block_height = 5;
 	while (block_width < 5 || block_height < 5 || block_width > 25 || block_height > 25) {
-		cout << "°¡·Î ±æÀÌ¿Í ¼¼·Î ±æÀÌ¸¦ ÀÔ·ÂÇØÁÖ¼¼¿ä." << endl;
-		cout << "* ±æÀÌ Á¦ÇÑ : 5 ~ 25 *" << endl;
-		cout << "ÀÔ·Â : ";cin >> block_width >> block_height;
+		cout << "ê°€ë¡œ ê¸¸ì´ì™€ ì„¸ë¡œ ê¸¸ì´ë¥¼ ì…ë ¥í•´ì£¼ì„¸ìš”." << endl;
+		cout << "* ê¸¸ì´ ì œí•œ : 5 ~ 25 *" << endl;
+		cout << "ì…ë ¥ : ";cin >> block_width >> block_height;
+
+		if (cin.fail()) {
+			cin.clear();
+			cin.ignore(10000, '\n');
+		}
 
 	}
 	block_start = block_width * block_height;
@@ -398,12 +481,17 @@ void InitData() {
 
 
 	block.clear();
-	for (float i = -(float)block_width / 2;i < (float)block_height/2;i+=1.0f) {
-		for (float j = -(float)block_height / 2;j < (float)block_width/2;j += 1.0f) {
+	for (float i = -(float)block_width / 2; i < (float)block_width / 2; i += 1.0f) { 
+		for (float j = -(float)block_height / 2; j < (float)block_height / 2; j += 1.0f) { 
 			block.push_back(Block(model[0], r_size(gen), r_speed(gen)));
 
-			float f = (i + j) / (float)(block_width + block_height);
-			block.back().colors = {f ,1.0f - f,1.0f - f };
+
+			int x_idx = (int)(i + (float)block_width / 2);
+			int z_idx = (int)(j + (float)block_height / 2);
+
+
+			float f = (float)(x_idx + z_idx) / (float)(block_width + block_height);
+			block.back().colors = { f ,1.0f - f,1.0f - f };
 
 			block.back().t = glm::vec3(i, 0.0f, j);
 			block.back().s.y = 0.1f;
@@ -414,48 +502,55 @@ void InitData() {
 			m = glm::scale(m, block.back().s);
 
 			block.back().modelMat = m;
-
-
 		}
 	}
 
 
 
-
 }
 void Update() {
-	vector<GLfloat> vertexData;
-	vector<GLuint> indices;
+	vector<GLfloat> combinateData;
+	for (size_t i = 0;i < block.size();++i) {
+		for (size_t j = 0;j < block[i].vertexData.size() / 3;++j) {
+			combinateData.push_back(block[i].vertexData[j * 3 + 0]);
+			combinateData.push_back(block[i].vertexData[j * 3 + 1]);
+			combinateData.push_back(block[i].vertexData[j * 3 + 2]);
+			combinateData.push_back(block[i].normalData[j * 3 + 0]);
+			combinateData.push_back(block[i].normalData[j * 3 + 1]);
+			combinateData.push_back(block[i].normalData[j * 3 + 2]);
 
-	for (size_t i = 0; i < block.size(); ++i) {
-		block[i].Update(model[0]);
-		vertexData.insert(vertexData.end(), block[i].vertexData.begin(), block[i].vertexData.end());
-
-		// ÀÎµ¦½º ¿ÀÇÁ¼Â º¸Á¤ ÇÊ¿ä (¿©·¯ ¸ğµ¨ ÇÕÄ¥ °æ¿ì)
-		GLuint offset = i == 0 ? 0 : (GLuint)(vertexData.size() / 3 - block[i].vertexData.size() / 3);
-		for (auto idx : block[i].indices) indices.push_back(idx + offset);
+		}
+	}
+	if (!robot.empty()) {
+		for (size_t i = 0;i < robot.size();++i) {
+			for (size_t j = 0;j < robot[i].vertexData.size() / 3;++j) {
+				combinateData.push_back(robot[i].vertexData[j * 3 + 0]);
+				combinateData.push_back(robot[i].vertexData[j * 3 + 1]);
+				combinateData.push_back(robot[i].vertexData[j * 3 + 2]);
+				combinateData.push_back(robot[i].normalData[j * 3 + 0]);
+				combinateData.push_back(robot[i].normalData[j * 3 + 1]);
+				combinateData.push_back(robot[i].normalData[j * 3 + 2]);
+			}
+		}
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(GLfloat), vertexData.data(), GL_DYNAMIC_DRAW);
-
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, combinateData.size() * sizeof(GLfloat), combinateData.data(), GL_DYNAMIC_DRAW);
 }
 int main(int argc, char** argv) {
 	model.push_back(read_obj_file("cube.obj"));
 	InitData();
 
-	srand(static_cast<unsigned>(time(0))); // ·£´ı ½Ãµå ÃÊ±âÈ­
+	srand(static_cast<unsigned>(time(0))); // ëœë¤ ì‹œë“œ ì´ˆê¸°í™”
 	glutInit(&argc, argv);
-	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH Ãß°¡
+	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH ì¶”ê°€
 	glutInitWindowPosition(100, 100);
 	glutInitWindowSize(width, height);
 	glutCreateWindow("tung tung tung tung tung tung tung tung tung sours");
 
 	glewExperimental = GL_TRUE;
 	if (glewInit() != GLEW_OK) {
-		std::cerr << "GLEW ÃÊ±âÈ­ ½ÇÆĞ" << std::endl;
+		std::cerr << "GLEW ì´ˆê¸°í™” ì‹¤íŒ¨" << std::endl;
 		return -1;
 	}
 
@@ -464,7 +559,7 @@ int main(int argc, char** argv) {
 	MakeFragmentShaders();
 	shaderProgramID = MakeShaderProgram();
 	if (shaderProgramID == 0) {
-		std::cerr << "¼ÎÀÌ´õ ÇÁ·Î±×·¥ »ı¼º ½ÇÆĞ" << std::endl;
+		std::cerr << "ì…°ì´ë” í”„ë¡œê·¸ë¨ ìƒì„± ì‹¤íŒ¨" << std::endl;
 		return -1;
 	}
 	
@@ -477,12 +572,880 @@ int main(int argc, char** argv) {
 	glutMotionFunc(Motion);
 	glutKeyboardFunc(Keyboard);
 	glutKeyboardUpFunc(Keyupboard);
-	glutSpecialFunc(SpecialKeyboard); // Æ¯¼ö Å°(È­»ìÇ¥) ÇÔ¼ö µî·Ï
+	glutMouseWheelFunc(MouseWheel);
+	glutSpecialFunc(SpecialKeyboard); // íŠ¹ìˆ˜ í‚¤(í™”ì‚´í‘œ) í•¨ìˆ˜ ë“±ë¡
+	glutPassiveMotionFunc(PassiveMotion);
 
 	glutMainLoop();
 	return 0;
 }
 
+
+
+
+void DrawScene() {
+
+
+	glEnable(GL_DEPTH_TEST); // ê¹Šì´ í…ŒìŠ¤íŠ¸ í™œì„±í™”
+	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+	if(silver)
+		glEnable(GL_CULL_FACE);// ì€ë©´ ì œê±° í™œì„±í™”
+	else
+		glDisable(GL_CULL_FACE);
+
+
+	
+
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // ê¹Šì´ ë²„í¼ í´ë¦¬ì–´ ì¶”ê°€
+
+	glUseProgram(shaderProgramID);
+	glBindVertexArray(VAO);
+
+	Update();
+
+
+
+	// Uniform ë§¤íŠ¸ë¦­ìŠ¤ ë§¤í•‘
+	GLint modelLoc = glGetUniformLocation(shaderProgramID, "model");
+	GLint viewLoc = glGetUniformLocation(shaderProgramID, "view");
+	GLint projLoc = glGetUniformLocation(shaderProgramID, "proj");
+	GLint faceColorLoc = glGetUniformLocation(shaderProgramID, "faceColor");
+	GLint modelNormalLocation = glGetUniformLocation(shaderProgramID, "modelNormal"); //--- modelNormal ê°’ ì „ë‹¬: ëª¨ë¸ ë§¤íŠ¸ë¦­ìŠ¤ì˜ ì—­ì „ì¹˜ í–‰ë ¬
+
+
+
+
+
+	glViewport(0, 0, width, height);
+	{
+		// Camera (View) ë° Projection ë§¤íŠ¸ë¦­ìŠ¤ ì„¤ì •
+		glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f)); // ë·° ë§¤íŠ¸ë¦­ìŠ¤
+		glm::mat4 proj;
+
+		if (op) {
+			float aspect = (float)width / (float)height;
+			float size = 5.0f;
+			proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
+		}
+		else {
+			proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+		}
+
+
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+		GLuint offset = 0;
+		for (int i = 0; i < block.size(); ++i) {
+			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
+				glDrawArrays(GL_TRIANGLES, offset, 3);
+				offset += 3;
+
+			}
+		}
+		if (!robot.empty()) {
+			for (int i = 0; i < robot.size(); ++i) {
+				for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
+					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
+					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+					glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
+					glDrawArrays(GL_TRIANGLES, offset, 3);
+					offset += 3;
+				}
+			}
+		}
+	}
+	glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
+	{
+		float maxrange = max(block_width, block_height) / 2.0f + 2.0f; 
+
+	
+		glm::mat4 view = glm::lookAt(
+			glm::vec3(0.0f, 30.0f, 0.0f),    
+			glm::vec3(0.0f, 0.0f, 0.0f),     
+			glm::vec3(0.0f, 0.0f, -1.0f)     
+		);
+
+		// ì§êµ íˆ¬ì˜ì„ ë¸”ë¡ ë²”ìœ„ì— ë§ê²Œ ì¡°ì •
+		glm::mat4 proj = glm::ortho(-maxrange, maxrange,-maxrange, maxrange,0.1f, 50.0f);
+
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+		GLuint offset = 0;
+		for (int i = 0; i < block.size(); ++i) {
+			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
+				glDrawArrays(GL_TRIANGLES, offset, 3);
+				offset += 3;
+			}
+				
+		}
+		if (!robot.empty()) {
+			for (int i = 0; i < robot.size(); ++i) {
+				for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
+					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
+					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+					glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
+					glDrawArrays(GL_TRIANGLES, offset, 3);
+					offset += 3;
+				}
+			}
+		}
+	}
+
+
+
+	GLint lightPosLocation = glGetUniformLocation(shaderProgramID, "lightPos"); //--- lightPos ê°’ ì „ë‹¬: (0.0, 0.0, 5.0);
+	GLint lightColorLocation = glGetUniformLocation(shaderProgramID, "lightColor"); //--- lightColor ê°’ ì „ë‹¬: (1.0, 1.0, 1.0) ë°±ìƒ‰
+	GLint viewPosLocation = glGetUniformLocation(shaderProgramID, "viewPos"); //--- viewPos ê°’ ì „ë‹¬: ì¹´ë©”ë¼ ìœ„ì¹˜
+
+
+
+
+	glm::vec3 lightPos = { 0.0f,200.0f,0.0f };
+	//glm::mat4 lightModelMat = shape.back().modelMat;
+	//lightPos = glm::vec3(lightModelMat * glm::vec4(lightPos, 1.0f));
+
+
+	glUniform3f(lightPosLocation, 0, 20, 0);
+
+
+	glUniform3f(lightColorLocation, light_color.x, light_color.y, light_color.z);
+
+	glUniform3f(viewPosLocation, cameraPos.x, cameraPos.y, cameraPos.z);
+
+
+
+
+	glBindVertexArray(0);
+	glutSwapBuffers();
+}
+
+
+void Reshape(int w, int h) {
+	glViewport(0, 0, w, h);
+	width = w;
+	height = h;
+}
+
+void Mouse(int button, int state, int x, int y)
+{
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN&&(view ==0)) {
+		left_mousex =x, left_mousey = y;
+		left_mouse = true;
+	}
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_UP && (view == 0)) {
+		left_mouse = false;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN && view == 0) {
+		right_mousex = x, right_mousey = y;
+		right_mouse = true;
+	}
+	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP && view == 0) {
+		right_mouse = false;
+	}
+
+	glutPostRedisplay();
+
+}
+void Motion(int x, int y)
+{
+	if (left_mouse) {
+		int deltax = x - left_mousex;
+		int deltay = y - left_mousey;
+
+		
+
+		if (deltax != 0) {
+			float angle = deltax * sense;
+			camera_x_angle += angle;
+			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
+		}
+
+		if (deltay != 0&& !camera_x_lock) {
+			float angle = -deltay * sense;
+			camera_y_angle += angle;
+			glm::vec3 c = cameraPos - camera_move;
+			glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
+			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
+			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
+		}
+
+		left_mousex = x;
+		left_mousey = y;
+
+
+
+		glutPostRedisplay();
+	}
+	if (right_mouse) {
+		int deltax = x - right_mousex;
+		int deltay = y - right_mousey;
+
+		if (deltax != 0) {
+			float angle = deltax * 0.05f;
+			glm::vec3 right = glm::normalize(glm::cross(camera_move - cameraPos, glm::vec3(0.0f, 1.0f, 0.0f)));
+			camera_move += right * angle;
+		}
+
+		if (deltay != 0) {
+			float moveAmount = -deltay * 0.05f;
+			glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+			glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+			glm::vec3 up = glm::normalize(glm::cross(right, forward));
+			camera_move += up * moveAmount;
+		}
+
+
+		right_mousex = x;
+		right_mousey = y;
+		glutPostRedisplay();
+	}
+}
+void PassiveMotion(int x, int y) {
+	if (view == 1 && !g) {
+		int center_x = width / 2;
+		int center_y = height / 2;
+		int deltax = -x + left_mousex;
+		int deltay = y - left_mousey;
+		float custom_sense = sense * 2.0f;
+		float old_y_angle = camera_y_angle;
+
+		if (deltax != 0) {
+			float angle = deltax * custom_sense;
+			camera_x_angle += angle;
+
+			if (camera_x_angle < -360.0f) camera_x_angle += 360.0f;
+			if (camera_x_angle > 360.0f) camera_x_angle -= 360.0f;
+
+			if (angle != 0.0f) {
+				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+				camera_move = glm::vec3(rotation * glm::vec4(camera_move - cameraPos, 1.0f)) + cameraPos;
+			}
+		}
+
+		if (deltay != 0 && !camera_x_lock) {
+			float angle = -deltay * custom_sense;
+			camera_y_angle += angle;
+
+			if (camera_y_angle < -45.0f || camera_y_angle > 45.0f) {
+				camera_y_angle = old_y_angle;
+				angle = 0.0f;
+			}
+
+			if (angle != 0.0f) {
+
+				glm::vec3 c = camera_move - cameraPos; 
+				glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
+				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
+
+
+				camera_move = glm::vec3(rotation * glm::vec4(camera_move - cameraPos, 1.0f)) + cameraPos;
+			}
+		}
+
+		if (x != center_x || y != center_y) {
+			glutWarpPointer(center_x, center_y);
+			left_mousex = center_x;
+			left_mousey = center_y;
+		}
+		else {
+			left_mousex = x;
+			left_mousey = y;
+		}
+	}
+	if (view == 3&& !g) {
+
+		int center_x = width / 2;
+		int center_y = height / 2;
+
+		int deltax = x - left_mousex;
+		int deltay = y - left_mousey;
+
+		float custom_sense = sense * 2.0f;
+		float old_y_angle = camera_y_angle;
+
+		if (deltax != 0) {
+			float angle = deltax * custom_sense;
+
+			camera_x_angle += angle;
+
+			if (camera_x_angle < -360.0f) camera_x_angle += 360.0f;
+			if (camera_x_angle > 360.0f) camera_x_angle -= 360.0f;
+
+			if (angle != 0.0f) {
+				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+				cameraPos = glm::vec3(rotation * glm::vec4(cameraPos - camera_move, 1.0f)) + camera_move;
+			}
+		}
+
+		if (deltay != 0 && !camera_x_lock) {
+			float angle = -deltay * custom_sense;
+
+			camera_y_angle += angle;
+
+			if (camera_y_angle < -60.0f || camera_y_angle > 30.0f) {
+				camera_y_angle = old_y_angle;
+				angle = 0.0f;
+			}
+
+			if (angle != 0.0f) {
+				glm::vec3 c = cameraPos - camera_move;
+				glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
+				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
+				cameraPos = glm::vec3(rotation * glm::vec4(cameraPos - camera_move, 1.0f)) + camera_move;
+			}
+		}
+
+		if (x != center_x || y != center_y) {
+			glutWarpPointer(center_x, center_y);
+
+			left_mousex = center_x;
+			left_mousey = center_y;
+		}
+		else {
+			left_mousex = x;
+			left_mousey = y;
+		}
+
+		glutPostRedisplay();
+	}
+
+}
+void MouseWheel(int wheel, int direction, int x, int y)
+{
+	float zoomSpeed = 1.0f;
+
+	glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+
+	if (direction > 0) {
+		cameraPos += forward * zoomSpeed;
+	}
+	else {
+		cameraPos -= forward * zoomSpeed;
+	}
+
+	glutPostRedisplay();
+}
+void camera_y_rotate(bool b) {
+	glm::mat4 m = glm::mat4(1.0f);
+	
+	if (b) {
+		m = glm::rotate(m, glm::radians(5.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+	else {
+		m = glm::rotate(m, glm::radians(-5.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+	
+	cameraPos = glm::vec3(m * glm::vec4(cameraPos, 1.0f));
+}
+void camera_wasd(char i) {
+	switch (i) {
+	case 'w':
+	{
+		glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+		cameraPos += forward * 0.1f;
+		camera_move += forward * 0.1f;
+		break;
+	}
+	}
+}
+void Keyboard(unsigned char key, int x, int y)
+{
+	if(start)
+	switch (key)
+	{
+	case 'o':
+	op = true;
+	break;
+	case 'p':
+	op = false;
+	break;
+	case 'z':
+	if (!op&& view==0) {
+		glm::vec3 v = { 0.0f,0.0f,-0.1f };
+		glm::mat4 m(1.0f);
+		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		v = glm::vec3(m * glm::vec4(v, 1.0f));
+		cameraPos += v;
+		camera_move += v;
+	}
+	break;
+	case 'Z':
+	if (!op && view == 0) {
+		glm::vec3 v = { 0.0f,0.0f,0.1f };
+		glm::mat4 m(1.0f);
+		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		v = glm::vec3(m * glm::vec4(v, 1.0f));
+		cameraPos += v;
+		camera_move += v;
+	}
+	break;
+	case 'm':
+	m = true;
+	break;
+	case 'M':
+	m = false;
+	break;
+	case 'y':
+	if(view == 0)
+	camera_y_rotate(true);
+	break;
+	case 'Y':
+		if (view == 0)
+	camera_y_rotate(false);
+	break;
+	case 'r':
+	if (!maze) {
+		maze = true;
+		GenerateMaze();
+	}
+	break;
+	case 'v':
+	v = !v;
+	if (!v)m = true;
+	else m = false;
+	break;
+	case 's':
+		if (!recall&& maze) {
+			recall = true;
+			Initrobot();
+		}
+	break;
+	case '+':
+	for (int i = 0;i < block.size();++i) {
+		block[i].speed += 0.01f;
+	}
+	break;
+	case '-':
+	for (int i = 0;i < block.size();++i) {
+		if(block[i].speed> 0.01f)
+		block[i].speed -= 0.01f;
+	}
+	break;
+	case '1':
+		if (recall) {
+			view = 1;
+			camera_x_angle = robot[2].angle;
+			cameraPos = robot[0].t;
+			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			glm::vec3 forward_offset = glm::vec3(rotation * glm::vec4(0.0f, 0.0f, 0.1f, 1.0f));
+			camera_move = cameraPos + forward_offset;
+
+			
+			
+		}
+	break;
+	case '3':
+		if (recall) {
+			view = 3;
+			camera_x_angle = robot[2].angle;
+			camera_y_angle = 0.0f;
+			camera_move = robot[2].t;
+			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			glm::vec3 forward_offset = glm::vec3(rotation * glm::vec4(0.0f, 0.4f, -0.3f, 1.0f));
+			cameraPos = camera_move + forward_offset;
+			
+		}
+	break;
+	case 'c':
+	system("cls");
+	InitData();
+	break;
+	case 'q':
+	exit(0);
+	break;
+
+
+
+	//ì¶”ê°€êµ¬í˜„ë“¤ 
+	//ì¹´ë©”ë¼ ë¬¶ê¸° í–‡ì£ ã…•ìš©
+	case '[':
+	{
+		static bool b = false;
+		static glm::vec3 s_light_color;
+
+		b = !b;
+		if (b) {
+			s_light_color = light_color;
+			light_color = glm::vec3(0.0f, 0.0f, 0.0f);
+		}
+		else light_color = s_light_color;
+
+	}
+	break;
+	case ']':
+	{
+		light_color = glm::vec3(r_color(gen), r_color(gen), r_color(gen));
+	}
+	break;
+	case '8':
+		if (view == 0) {
+			glm::vec3 v = { 0.0f,0.0f,-0.2 };
+			glm::mat4 m(1.0f);
+			m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			v = glm::vec3(m * glm::vec4(v, 1.0f));
+			cameraPos += v;
+			camera_move += v;
+		}
+		break;
+	case '5':
+		if (view == 0) {
+			glm::vec3 v = { 0.0f,0.0f,0.2 };
+			glm::mat4 m(1.0f);
+			m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			v = glm::vec3(m * glm::vec4(v, 1.0f));
+			cameraPos += v;
+			camera_move += v;
+		}
+		break;
+	case '4':
+		if (view == 0) {
+			glm::vec3 v = { -0.2f,0.0f,0.0 };
+			glm::mat4 m(1.0f);
+			m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			v = glm::vec3(m * glm::vec4(v, 1.0f));
+			cameraPos += v;
+			camera_move += v;
+		}
+		break;
+	case '6':
+		if (view == 0) {
+			glm::vec3 v = { 0.2f,0.0f,0.0 };
+			glm::mat4 m(1.0f);
+			m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			v = glm::vec3(m * glm::vec4(v, 1.0f));
+			cameraPos += v;
+			camera_move += v;
+		}
+		break;
+	case 't':
+		camera_x_lock = true;
+		break;
+	case '9':
+		silver = !silver;
+		break;
+
+	case '2':
+		if (recall) {
+			view = 2;
+			camera_x_angle = robot[2].angle;
+			camera_move=glm::vec3(0.0f);
+			cameraPos = glm::vec3(-10.0f, max(float(block_width), float(block_height))+40.0f, -10.0f);
+
+		}
+		break;
+	case '0':	
+		view = 0;
+		view_change = false;
+		break;
+	case 'g':
+		g = true;
+		break;
+
+	}
+
+	glutPostRedisplay();
+}
+
+// íŠ¹ìˆ˜ í‚¤(í™”ì‚´í‘œ) ì²˜ë¦¬ í•¨ìˆ˜: ë„í˜• íšŒì „
+void SpecialKeyboard(int key, int x, int y)
+{
+	if (recall && view != 0) {
+		glm::vec3 old_robot_t[ROBOT];
+		for (int i = 0; i < robot.size(); ++i) {
+			old_robot_t[i] = robot[i].t;
+		}
+
+		glm::vec3 robotHalf = robotbb.halfExtents;
+
+		switch (key)
+		{
+		case GLUT_KEY_UP:
+			for (int i = 0; i < robot.size(); ++i) {
+				glm::vec3 v = { 0.0f,0.0f,view != 2 ? 0.1f : -0.1f };
+				glm::mat4 m(1.0f);
+				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+				v = glm::vec3(m * glm::vec4(v, 1.0f));
+				robot[i].t += v;
+
+				if (view != 2) {
+					robot[i].angle = camera_x_angle;
+				}
+			}
+			break;
+		case GLUT_KEY_DOWN:
+			for (int i = 0; i < robot.size(); ++i) {
+				glm::vec3 v = { 0.0f,0.0f,view != 2 ? -0.1f : 0.1f };
+				glm::mat4 m(1.0f);
+				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+				v = glm::vec3(m * glm::vec4(v, 1.0f));
+				robot[i].t += v;
+
+				if (view != 2) {
+					robot[i].angle = camera_x_angle + 180.0f;
+				}
+			}
+			break;
+		case GLUT_KEY_LEFT:
+			for (int i = 0; i < robot.size(); ++i) {
+				glm::vec3 v = { view != 2 ? 0.1f : -0.1f ,0.0f,0.0f };
+				glm::mat4 m(1.0f);
+				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+				v = glm::vec3(m * glm::vec4(v, 1.0f));
+				robot[i].t += v;
+
+				if (view != 2) {
+					robot[i].angle = camera_x_angle + 90.0f;
+				}
+			}
+			break;
+		case GLUT_KEY_RIGHT:
+			for (int i = 0; i < robot.size(); ++i) {
+				glm::vec3 v = { view != 2 ? -0.1f : 0.1f,0.0f,0.0f };
+				glm::mat4 m(1.0f);
+				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+				v = glm::vec3(m * glm::vec4(v, 1.0f));
+				robot[i].t += v;
+
+				if (view != 2) {
+					robot[i].angle = camera_x_angle - 90.0f;
+				}
+			}
+			break;
+		default:
+			break;
+		}
+
+		glm::vec3 newRobotCenter = robot[2].t;
+		bool collided = false;
+		for (auto& wall : block) {
+			if (CheckCollision(newRobotCenter, robotHalf, wall)) {
+				if (wall.start) {
+					cout << wall.name << endl;
+				}
+				else if (wall.end) {
+					cout << wall.name << endl;
+					recall = false;
+					view = 0;
+					robot.clear();
+					cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
+					camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
+					camera_x_angle = 0.0f;
+					camera_y_angle = 0.0f;
+					break;
+				}
+				else if (wall.line) {
+					cout << wall.name << endl;
+					wall.colors = { 0.0f,0.0f,0.0f };
+				}
+				else {
+					cout << wall.name << endl;
+					collided = true;
+				}
+			}
+			else if (!CheckCollision(robot[2].t, robotHalf, wall) && wall.line) {
+				wall.colors = { 0.8f,0.8f,0.8f };
+
+			}
+		}
+
+		if (collided) {
+			for (int i = 0; i < robot.size(); ++i) {
+				robot[i].t = old_robot_t[i];
+			}
+		}
+
+		glutPostRedisplay();
+	}
+}
+void Keyupboard(unsigned char key, int x, int y) {
+	switch (key) {
+	case 't':
+		camera_x_lock = false;;
+		break;
+
+	case 'g':
+		g = false;
+		break;
+	}
+}
+
+void Start_Wait() {
+	for (int i = 0;i < block.size();++i) {
+		if (block[i].size > 0) {
+			block[i].s.y += block[i].speed * 0.5f;
+			block[i].t.y += block[i].speed * 0.25f;	
+			--block[i].size;
+			if (block[i].size == 0)--block_start;
+		}
+	}
+	if (block_start == 0)start = true;
+}
+void U_D_animation() {
+	for (int i = 0;i < block.size();++i) {
+		if (!block[i].line) {
+			int a = (r_m(gen) == 0 ? 1 : -1);
+			if (block[i].t.y < 3.0f)a = 1;
+			block[i].s.y += block[i].speed * 0.5f * a;
+			block[i].t.y += block[i].speed * 0.25f * a;
+			block[i].colors = { (block[i].colors.x + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.x + 0.01f)
+					,(block[i].colors.y + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.y + 0.01f)
+					,(block[i].colors.z + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.z + 0.01f) };
+		}
+	}
+}
+void D_animation() {
+	for (int i = 0;i < block.size();++i) {
+		if (block[i].t.y > 1.0f&& !block[i].line) {
+			block[i].s.y -= block[i].speed * 0.1f;
+			block[i].t.y -= block[i].speed * 0.05f;
+		}
+
+	}
+}
+void camera_move_update() {
+	if (robot.empty()) return;
+	glm::vec3 new_robot = robot[2].t;
+	glm::vec3 old_robot = camera_move;
+	if (view == 1) {
+		glm::vec3 robot_translation = robot[0].t - cameraPos;
+		cameraPos = robot[0].t;
+		camera_move += robot_translation;
+	}
+
+	else if (view == 3) {
+		glm::vec3 robot_translation = new_robot - old_robot;
+		cameraPos += robot_translation;
+		camera_move = new_robot;
+	}
+}
+void TimerFunction(int value)
+{
+	camera_move -= glm::vec3(ad_ * 0.5f, ws_ * 0.5f, pn_ * 0.5f);
+	
+	for (int i = 0;i < block.size();++i) {
+		glm::mat4 m = glm::mat4(1.0f);
+
+		m = glm::translate(m, block[i].t);
+		m = glm::rotate(m, glm::radians(block[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		m = glm::scale(m, block[i].s);
+		block[i].modelMat = m;
+	}
+	if (recall)
+	updaterobot();
+	
+
+	if (recall)
+	camera_move_update();
+
+
+
+
+
+	ad_ = ws_ = pn_ = 0;
+
+	if(!start)Start_Wait();
+	else {
+		if (v)D_animation();
+		else if (m)U_D_animation();
+	}
+	glutTimerFunc(10, TimerFunction, 1);
+	glutPostRedisplay();
+}
+
+GLchar ch[256]{};
+GLchar* filetobuf(const char* file)
+{
+	FILE* fptr;
+	long length;
+	char* buf;
+	fptr = fopen(file, "rb"); // Open file for reading
+	if (!fptr) // Return NULL on failure
+		return NULL;
+	fseek(fptr, 0, SEEK_END); // Seek to the end of the file
+	length = ftell(fptr); // Find out how many bytes into the file we are
+	buf = (char*)malloc(length + 1); // Allocate a buffer for the entire length of the file and a null terminator
+	fseek(fptr, 0, SEEK_SET); // Go back to the beginning of the file
+	fread(buf, length, 1, fptr); // Read the contents of the file in to the buffer
+	fclose(fptr); // Close the file
+	buf[length] = 0; // Null terminator
+	return buf; // Return the buffer
+}
+//ë²„í…ìŠ¤ ì„¸ì´ë” ê°ì²´ ë§Œë“¤ê¸°
+void make_vertexShaders()
+{
+	GLchar* vertexSource;
+
+	//ë²„í…ìŠ¤ ì„¸ì´ë” ì½ì–´ ì €ì¥í•˜ê³  ì»´íŒŒì¼ í•˜ê¸°
+	//filetobuf : ì‚¬ìš©ìì •ì˜ í•¨ìˆ˜ë¡œ í…ìŠ¤íŠ¸ë¥¼ ì½ì–´ì„œ ë¬¸ìì—´ì— ì €ì¥í•˜ëŠ” í•¨ìˆ˜
+	vertexSource = filetobuf("vertex.glsl");
+	vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertexShader, 1, &vertexSource, NULL);
+	glCompileShader(vertexShader);
+	GLint result;
+	GLchar errorLog[512];
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &result);
+	if (!result)
+	{
+		glGetShaderInfoLog(vertexShader, 512, NULL, errorLog);
+		cerr << "ERROR: vertex shader \n" << errorLog << std::endl;
+		return;
+	}
+}
+
+//í”„ë˜ê·¸ë¨¼íŠ¸ ì„¸ì´ë” ê°ì²´ ë§Œë“¤ê¸°
+void make_fragmentShaders()
+{
+	GLchar* fragmentSource;
+	//í”„ë˜ê·¸ë¨¼íŠ¸ ì„¸ì´ë” ì½ì–´ ì €ì¥í•˜ê³  ì»´íŒŒì¼í•˜ê¸°
+	fragmentSource = filetobuf("fragment.glsl"); // í”„ë˜ê·¸ì„¸ì´ë” ì½ì–´ì˜¤ê¸°
+	fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+	glCompileShader(fragmentShader);
+	GLint result;
+	GLchar errorLog[512];
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &result);
+	if (!result)
+	{
+		glGetShaderInfoLog(fragmentShader, 512, NULL, errorLog);
+		std::cerr << "ERROR: frag_shader \n" << errorLog << std::endl;
+		return;
+	}
+}
+
+//ì„¸ì´ë” í”„ë¡œê·¸ë¨ ë§Œë“¤ê³  ì„¸ì´ë” ê°ì²´ ë§í¬í•˜ê¸°
+GLuint make_shaderProgram()
+{
+	GLuint shaderID;
+	shaderID = glCreateProgram(); //ì„¸ì´ë” í”„ë¡œê·¸ë¨ ë§Œë“¤ê¸°
+	glAttachShader(shaderID, vertexShader); //ì„¸ì´ë” í”„ë¡œê·¸ë¨ì— ë²„í…ìŠ¤ ì„¸ì´ë” ë¶™ì´ê¸°
+	glAttachShader(shaderID, fragmentShader); //ì„¸ì´ë” í”„ë¡œê·¸ë¨ì— í”„ë˜ê·¸ë¨¼íŠ¸ ì„¸ì´ë” ë¶™ì´ê¸°
+	glLinkProgram(shaderID); //ì„¸ì´ë” í”„ë¡œê·¸ë¨ ë§í¬í•˜ê¸°
+	glDeleteShader(vertexShader); //ì„¸ì´ë” ê°ì²´ë¥¼ ì„¸ì´ë” í”„ë¡œê·¸ë¨ì— ë§í¬í–ˆìŒìœ¼ë¡œ ì„¸ì´ë” ê°ì²´ ìì²´ëŠ” ì‚­ì œ ê°€ëŠ¥
+	glDeleteShader(fragmentShader);
+	GLint result;
+	GLchar errorLog[512];
+	glGetProgramiv(shaderID, GL_LINK_STATUS, &result);// ì„¸ì´ë”ê°€ ì˜ ì—°ê²°ë˜ì—ˆëŠ”ì§€ ì²´í¬í•˜ê¸°
+	if (!result) {
+		glGetProgramInfoLog(shaderID, 512, NULL, errorLog);
+		std::cerr << "ERROR: shader program  \n" << errorLog << std::endl;
+		return false;
+	}
+	glUseProgram(shaderID); //ë§Œë“¤ì–´ì§„ ì„¸ì´ë” í”„ë¡œê·¸ë¨ ì‚¬ìš©í•˜ê¸°
+	//ì—¬ëŸ¬ ê°œì˜ ì„¸ì´ë”í”„ë¡œê·¸ë¨ ë§Œë“¤ ìˆ˜ ìˆê³ ,ê·¸ ì¤‘ í•œê°œì˜ í”„ë¡œê·¸ë¨ì„ ì‚¬ìš©í•˜ë ¤ë©´
+	//glUseProgram í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•˜ì—¬ ì‚¬ìš© í•  íŠ¹ì • í”„ë¡œê·¸ë¨ì„ ì§€ì •í•œë‹¤
+	//ì‚¬ìš©í•˜ê¸° ì§ì „ì— í˜¸ì¶œí•  ìˆ˜ ìˆë‹¤
+	return shaderID;
+}
 
 
 void MakeVertexShaders() {
@@ -557,507 +1520,249 @@ void InitBuffers() {
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
 
-	glGenBuffers(1, &EBO);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
 
 
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (void*)0);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void*)0);
 	glEnableVertexAttribArray(0);
-
-
-
-	glBindVertexArray(0);
-}
-
-void DrawScene() {
-
-
-	glEnable(GL_DEPTH_TEST); // ±íÀÌ Å×½ºÆ® È°¼ºÈ­
-	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-	//if(silver)
-	//	glEnable(GL_CULL_FACE);// Àº¸é Á¦°Å È°¼ºÈ­
-	//else
-	//	glDisable(GL_CULL_FACE);
-
-
-	
-
-
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // ±íÀÌ ¹öÆÛ Å¬¸®¾î Ãß°¡
-
-	glUseProgram(shaderProgramID);
-	glBindVertexArray(VAO);
-
-	Update();
-
-
-
-	// Uniform ¸ÅÆ®¸¯½º ¸ÅÇÎ
-	GLint modelLoc = glGetUniformLocation(shaderProgramID, "model");
-	GLint viewLoc = glGetUniformLocation(shaderProgramID, "view");
-	GLint projLoc = glGetUniformLocation(shaderProgramID, "proj");
-	GLint faceColorLoc = glGetUniformLocation(shaderProgramID, "faceColor");
-
-
-
-
-
-	glViewport(0, 0, width, height);
-	{
-		// Camera (View) ¹× Projection ¸ÅÆ®¸¯½º ¼³Á¤
-		glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f)); // ºä ¸ÅÆ®¸¯½º
-		glm::mat4 proj;
-
-		if (op) {
-			float aspect = (float)width / (float)height;
-			float size = 5.0f;
-			proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
-		}
-		else {
-			proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
-		}
-
-
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-
-		GLuint offset = 0;
-		for (int i = 0; i < block.size(); ++i) {
-			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) { // colors °³¼ö == face °³¼ö
-				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
-				glDrawArrays(GL_TRIANGLES, offset, 3);
-				offset += 3;
-			}
-		}
-
-	}
-	glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
-	{
-		float maxrange = max(block_width, block_height) / 2.0f + 2.0f; 
-
-	
-		glm::mat4 view = glm::lookAt(
-			glm::vec3(0.0f, 30.0f, 0.0f),    
-			glm::vec3(0.0f, 0.0f, 0.0f),     
-			glm::vec3(0.0f, 0.0f, -1.0f)     
-		);
-
-		// Á÷±³ Åõ¿µÀ» ºí·Ï ¹üÀ§¿¡ ¸Â°Ô Á¶Á¤
-		glm::mat4 proj = glm::ortho(-maxrange, maxrange,-maxrange, maxrange,0.1f, 50.0f);
-
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-
-		GLuint offset = 0;
-		for (int i = 0; i < block.size(); ++i) {
-			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
-				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
-				glDrawArrays(GL_TRIANGLES, offset, 3);
-				offset += 3;
-			}
-		}
-	}
-
-
-	
-
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float))); //--- ë…¸ë§ ì†ì„±
+	glEnableVertexAttribArray(1);
 
 
 	glBindVertexArray(0);
-	glutSwapBuffers();
 }
 
+void GenerateMaze() {
+	// 1. ë¯¸ë¡œ ìƒíƒœë¥¼ ì €ì¥í•  2D ê·¸ë¦¬ë“œ ì´ˆê¸°í™” (1: ë²½, 0: í†µë¡œ)
+	vector<vector<int>> mazeGrid(block_width, vector<int>(block_height, 1));
+	// DFS ë°©ë¬¸ ì—¬ë¶€ë¥¼ ì²´í¬í•  2D ê·¸ë¦¬ë“œ
+	vector<vector<bool>> visited(block_width, vector<bool>(block_height, false));
+	// DFSë¥¼ ìœ„í•œ ìŠ¤íƒ
+	stack<pair<int, int>> s;
 
-void Reshape(int w, int h) {
-	glViewport(0, 0, w, h);
-	width = w;
-	height = h;
-}
+	// 2. ì‹œì‘ ìœ„ì¹˜ë¥¼ (1, 1)ë¡œ ê°•ì œ (í…Œë‘ë¦¬ ì•ˆìª½)
+	// (ì‹œì‘ ìœ„ì¹˜ëŠ” 1, 3, 5... ê°™ì€ í™€ìˆ˜ì—¬ì•¼ 2ì¹¸ì”© ì´ë™í•˜ëŠ” ë¡œì§ê³¼ ì˜ ë§ìŠµë‹ˆë‹¤)
+	int startX = block_width / 2;
+	int startZ = block_height / 2;
 
-void Mouse(int button, int state, int x, int y)
-{
-	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-		left_mousex =x, left_mousey = y;
-		left_mouse = true;
-	}
-	if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
-		left_mouse = false;
-	}
-	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
-		right_mousex = x, right_mousey = y;
-		right_mouse = true;
-	}
-	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP) {
-		right_mouse = false;
-	}
+	if (startX % 2 == 0) startX--; 
+	if (startZ % 2 == 0) startZ--;
 
-	glutPostRedisplay();
+	
+	if (startX < 1) startX = 1;
+	if (startZ < 1) startZ = 1;
 
-}
-void Motion(int x, int y)
-{
-	if (left_mouse) {
-		int deltax = x - left_mousex;
-		int deltay = y - left_mousey;
+	block[startX * block_height + startZ].start = true;
+
+	visited[startX][startZ] = true;
+	mazeGrid[startX][startZ] = 0; // í†µë¡œ
+	s.push({ startX, startZ });
+
+	// 3. DFS (Recursive Backtracker) ìˆ˜í–‰
+	while (!s.empty()) {
+		auto [cx, cz] = s.top();
+
+		// 2ì¹¸ ë–¨ì–´ì§„ ì´ì›ƒ íƒìƒ‰ (ìƒ, í•˜, ì¢Œ, ìš°)
+		vector<pair<int, int>> neighbors;
+		int dx[] = { 0, 0, 2, -2 }; // X ì´ë™
+		int dz[] = { 2, -2, 0, 0 }; // Z ì´ë™
+
+		for (int i = 0; i < 4; ++i) {
+			int nx = cx + dx[i];
+			int nz = cz + dz[i];
 
 		
-
-		if (deltax != 0) {
-			float angle = deltax * sense;
-			camera_x_angle += angle;
-			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
-			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
-		}
-
-		if (deltay != 0&& !camera_x_lock) {
-			float angle = -deltay * sense;
-			camera_y_angle += angle;
-			glm::vec3 c = cameraPos - camera_move;
-			glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
-			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
-			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
-		}
-
-		left_mousex = x;
-		left_mousey = y;
-
-
-
-		glutPostRedisplay();
-	}
-	if (right_mouse) {
-		int deltax = x - right_mousex;
-		int deltay = y - right_mousey;
-
-		if (deltax != 0) {
-			float angle = deltax * 0.05f;
-			glm::vec3 right = glm::normalize(glm::cross(camera_move - cameraPos, glm::vec3(0.0f, 1.0f, 0.0f)));
-			camera_move += right * angle;
-		}
-
-		if (deltay != 0) {
-			float moveAmount = -deltay * 0.05f;
-			glm::vec3 forward = glm::normalize(camera_move - cameraPos);
-			glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
-			glm::vec3 up = glm::normalize(glm::cross(right, forward));
-			camera_move += up * moveAmount;
-		}
-
-
-		right_mousex = x;
-		right_mousey = y;
-		glutPostRedisplay();
-	}
-}
-
-void camera_y_rotate(bool b) {
-	glm::mat4 m = glm::mat4(1.0f);
+			// ê·¸ë¦¬ë“œ í…Œë‘ë¦¬(0, max)ë¥¼ ì œì™¸í•œ ì•ˆìª½(1 ~ max-2)ì—ì„œë§Œ íƒìƒ‰
+			if (nx > 0 && nx < block_width - 1 && nz > 0 && nz < block_height - 1 && !visited[nx][nz]) {
+				neighbors.push_back({ nx, nz });
+			}
 	
-	if (b) {
-		m = glm::rotate(m, glm::radians(5.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	}
-	else {
-		m = glm::rotate(m, glm::radians(-5.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	}
-	
-	cameraPos = glm::vec3(m * glm::vec4(cameraPos, 1.0f));
-}
-void camera_wasd(char i){
-	switch (i) {
-	case 'w':
-	{
-		glm::vec3 forward = glm::normalize(camera_move - cameraPos);
-		cameraPos += forward * 0.1f;
-		camera_move += forward * 0.1f;
-		break;
-	}
-	}
-}
-void Keyboard(unsigned char key, int x, int y)
-{
-	if(start)
-	switch (key)
-	{
-	case 'o':
-	op = true;
-	break;
-	case 'p':
-	op = false;
-	break;
-	case 'z':
-	if (!op) {
-		cameraPos.z -= 0.1;
-		camera_move.z -= 0.1;
-	}
-	break;
-	case 'Z':
-	if (!op) {
-		cameraPos.z += 0.1;
-		camera_move.z += 0.1;
-	}
-	break;
-	case 'm':
-	m = true;
-	break;
-	case 'M':
-	m = false;
-	break;
-	case 'y':
-	camera_y_rotate(true);
-	break;
-	case 'Y':
-	camera_y_rotate(false);
-	break;
-	case 'r':
-
-	break;
-	case 'v':
-	v = !v;
-	if (!v)m = true;
-	else m = false;
-	break;
-	case 's':
-
-	break;
-	case '+':
-	for (int i = 0;i < block.size();++i) {
-		block[i].speed += 0.01f;
-	}
-	break;
-	case '-':
-	for (int i = 0;i < block.size();++i) {
-		if(block[i].speed> 0.01f)
-		block[i].speed -= 0.01f;
-	}
-	break;
-	case '1':
-
-	break;
-	case '3':
-
-	break;
-	case 'c':
-	system("cls");
-	InitData();
-	start = false;
-	break;
-	case 'q':
-	exit(0);
-	break;
-
-
-
-	//Ãß°¡±¸Çöµé
-	case '8':
-		cameraPos.z -= 0.2;
-		camera_move.z -= 0.2;
-		break;
-	case '5':
-		cameraPos.z += 0.2;
-		camera_move.z += 0.2;
-		break;
-	case '4':
-		cameraPos.x -= 0.2;
-		camera_move.x -= 0.2;
-		break;
-	case '6':
-		cameraPos.x += 0.2;
-		camera_move.x += 0.2;
-		break;
-	case 't':
-		camera_x_lock = true;
-		break;
-
-	}
-
-	glutPostRedisplay();
-}
-
-// Æ¯¼ö Å°(È­»ìÇ¥) Ã³¸® ÇÔ¼ö: µµÇü È¸Àü
-void SpecialKeyboard(int key, int x, int y)
-{
-	switch (key)
-	{
-	case GLUT_KEY_UP:
-		for (int i = 0; i < shape.size(); ++i) {
-			shape[i].t.z -= 0.1f;
-		}
-		break;
-	case GLUT_KEY_DOWN:
-		for (int i = 0; i < shape.size(); ++i) {
-			shape[i].t.z += 0.1f;
-		}
-		break;
-	case GLUT_KEY_LEFT:
-		for (int i = 0; i < shape.size(); ++i) {
-			shape[i].t.x -= 0.1f;
-		}
-		break;
-	case GLUT_KEY_RIGHT:
-		for (int i = 0; i < shape.size(); ++i) {
-			shape[i].t.x += 0.1f;
-		}
-		break;
-	default:
-		break;
-	}
-
-	glutPostRedisplay();  // Àç·»´õ¸µ ¿äÃ»
-}
-void Keyupboard(unsigned char key, int x, int y) {
-	switch (key) {
-	case 't':
-		camera_x_lock = false;;
-		break;
-	}
-}
-
-void Start_Wait() {
-	for (int i = 0;i < block.size();++i) {
-		if (block[i].size > 0) {
-			block[i].s.y += block[i].speed * 0.5f;
-			block[i].t.y += block[i].speed * 0.25f;	
-			--block[i].size;
-			if (block[i].size == 0)--block_start;
-		}
-	}
-	if (block_start == 0)start = true;
-}
-void U_D_animation() {
-	for (int i = 0;i < block.size();++i) {
-		int a = (r_m(gen) == 0 ? 1 : -1);
-		if (block[i].t.y < 3.0f)a = 1;
-		block[i].s.y += block[i].speed * 0.5f* a;
-		block[i].t.y += block[i].speed * 0.25f* a;
-		block[i].colors = { (block[i].colors.x + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.x + 0.01f)
-				,(block[i].colors.y + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.y + 0.01f)
-				,(block[i].colors.z + 0.01f) >= 1.0f ? 0.0f : (block[i].colors.z + 0.01f) };
-
-	}
-}
-void D_animation() {
-	for (int i = 0;i < block.size();++i) {
-		if (block[i].t.y > 1.0f) {
-			block[i].s.y -= block[i].speed * 0.1f;
-			block[i].t.y -= block[i].speed * 0.05f;
 		}
 
+		if (!neighbors.empty()) {
+			// ì´ì›ƒ ì¤‘ í•˜ë‚˜ë¥¼ ë¬´ì‘ìœ„ë¡œ ì„ íƒ
+			uniform_int_distribution<int> r_neighbor(0, neighbors.size() - 1);
+			auto [nx, nz] = neighbors[r_neighbor(gen)];
+
+			// ë°©ë¬¸ ì²˜ë¦¬ ë° í†µë¡œ ìƒì„±
+			visited[nx][nz] = true;
+			mazeGrid[nx][nz] = 0;
+			// í˜„ì¬ ì…€ê³¼ ì´ì›ƒ ì…€ ì‚¬ì´ì˜ ë²½ë„ í†µë¡œë¡œ ë§Œë“¦
+			mazeGrid[cx + (nx - cx) / 2][cz + (nz - cz) / 2] = 0;
+
+			s.push({ nx, nz }); // ìƒˆ ì´ì›ƒì„ ìŠ¤íƒì— ì¶”ê°€
+		}
+		else {
+			// ë§‰ë‹¤ë¥¸ ê¸¸ì´ë¯€ë¡œ ìŠ¤íƒì—ì„œ ì œê±° (ë°±íŠ¸ë˜í‚¹)
+			s.pop();
+		}
+	}
+
+	// 4. ê°€ì¥ìë¦¬ì— ë‹¨ í•˜ë‚˜ì˜ ì¶œêµ¬ ìƒì„± (ìˆ˜ì •ëœ ë¡œì§)
+	//    í…Œë‘ë¦¬ ë²½ ì•ˆìª½(1, max-2)ì´ í†µë¡œ(0)ì¸ ì§€ì ì„ ì°¾ì•„, ê·¸ ë°”ê¹¥ìª½ í…Œë‘ë¦¬ë¥¼ ëš«ìŠµë‹ˆë‹¤.
+	uniform_int_distribution<int> r_edge(0, 3);
+	uniform_int_distribution<int> r_pos_w(1, block_width - 2);  // xì¶• ëœë¤ (1 ~ w-2)
+	uniform_int_distribution<int> r_pos_h(1, block_height - 2); // zì¶• ëœë¤ (1 ~ h-2)
+
+	bool exit_created = false;
+	while (!exit_created) {
+		int edge = r_edge(gen); // 0: ìœ„, 1: ì•„ë˜, 2: ì˜¤ë¥¸ìª½, 3: ì™¼ìª½
+
+		if (edge == 0) { // ìœ„ìª½ (Z = block_height - 1)
+			int x = r_pos_w(gen);
+			if (mazeGrid[x][block_height - 2] == 0) { // ì•ˆìª½ì´ í†µë¡œë¼ë©´
+				mazeGrid[x][block_height - 1] = 0;    // í…Œë‘ë¦¬ë¥¼ ëš«ìŒ
+				block[x * block_height + (block_height - 1)].end = true;
+				exit_created = true;
+			}
+		}
+		else if (edge == 1) { // ì•„ë˜ìª½ (Z = 0)
+			int x = r_pos_w(gen);
+			if (mazeGrid[x][1] == 0) { // ì•ˆìª½ì´ í†µë¡œë¼ë©´
+				mazeGrid[x][0] = 0;    // í…Œë‘ë¦¬ë¥¼ ëš«ìŒ
+				block[x * block_height + 0].end = true;
+				exit_created = true;
+			}
+		}
+		else if (edge == 2) { // ì˜¤ë¥¸ìª½ (X = block_width - 1)
+			int z = r_pos_h(gen);
+			if (mazeGrid[block_width - 2][z] == 0) { // ì•ˆìª½ì´ í†µë¡œë¼ë©´
+				mazeGrid[block_width - 1][z] = 0;    // í…Œë‘ë¦¬ë¥¼ ëš«ìŒ
+				block[(block_width - 1) * block_height + z].end = true;
+				exit_created = true;
+			}
+		}
+		else { // ì™¼ìª½ (X = 0)
+			int z = r_pos_h(gen);
+			if (mazeGrid[1][z] == 0) { // ì•ˆìª½ì´ í†µë¡œë¼ë©´
+				mazeGrid[0][z] = 0;    // í…Œë‘ë¦¬ë¥¼ ëš«ìŒ
+				block[0 * block_height + z].end = true;
+				exit_created = true;
+			}
+		}
+	}
+
+	// 5. ìƒì„±ëœ mazeGridë¥¼ block ë²¡í„°ì— ì ìš© (ê¸°ì¡´ê³¼ ë™ì¼)
+	for (int x = 0; x < block_width; ++x) {
+		for (int z = 0; z < block_height; ++z) {
+			int index = x * block_height + z;
+
+			if (mazeGrid[x][z] == 1) { // ë²½
+				block[index].name = "wall";
+			}
+			else { // í†µë¡œ
+				block[index].s.y = 0.1f; // í†µë¡œ ë†’ì´
+				block[index].t.y = 0.0f; // í†µë¡œ ìœ„ì¹˜
+
+				if (block[index].start) {
+					block[index].colors = { 1.0f, 0.0f, 0.0f }; // ì‹œì‘ ìƒ‰ìƒ
+					start_pos = block[index].t;
+					cout << block[index].t.x << ", " << block[index].t.z << endl;
+					block[index].name = "start";
+				}
+				else if (block[index].end) {
+					block[index].colors = { 0.0f, 1.0f, 0.0f }; // ì¶œêµ¬ ìƒ‰ìƒ
+					cout << block[index].t.x << ", " << block[index].t.z << endl;
+					block[index].name = "exit";
+				}
+				else {
+					block[index].colors = { 0.8f, 0.8f, 0.8f }; // í†µë¡œ ìƒ‰ìƒ
+					block[index].name = "line";
+					block[index].line = true;
+				}
+			}
+		}
 	}
 }
-void TimerFunction(int value)
-{
-	camera_move -= glm::vec3(ad_ * 0.5f, ws_ * 0.5f, pn_ * 0.5f);
-	
-	for (int i = 0;i < block.size();++i) {
+
+void Initrobot() {
+	robot.clear();
+	float y = 0.25;
+	//ë¨¸ë¦¬
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { 0.0f,-0.05f,0.0f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.03f,0.03f,0.03f };
+	//robot.back().s *= 5;
+
+
+
+	//ì½”
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { 0.0f,-0.05f,0.02f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.01f,0.02f,0.01f };
+	//robot.back().s *= 5;
+
+
+	//ëª¸í†µ
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { 0.0f,-0.1f,0.0f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.06f,0.06f,0.06f };
+	//robot.back().s *= 5;
+
+
+	//ì™¼íŒ”
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { -0.04f,-0.1f,0.0f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.015f,0.05f,0.015f };
+	//robot.back().s *= 5;
+
+
+	//ì˜¤ë¥¸íŒ”
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { 0.04f,-0.1f,0.0f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.015f,0.05f,0.015f };
+	//robot.back().s *= 5;
+
+
+	//ì™¼ë‹¤ë¦¬
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { -0.015f,-0.17f,0.0f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.02f,0.07f,0.02f };
+	//robot.back().s *= 5;
+
+
+	//ì˜¤ë¥¸ë‹¤ë¦¬
+	robot.push_back(Shape(model[0], 1));
+	robot.back().t = { 0.015f,-0.17f,0.0f };
+	robot.back().t += start_pos;
+	robot.back().t.y += y;
+	robot.back().s = { 0.02f,0.07f,0.02f };
+	//robot.back().s *= 5;
+
+	robotbb.halfExtents = { 0.055f, 0.14f, 0.03f };
+}
+void updaterobot() {
+	if (robot.empty()) return;
+	for (int i = 0;i < robot.size();++i) {
 		glm::mat4 m = glm::mat4(1.0f);
 
-		m = glm::rotate(m, glm::radians(block[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
-		m = glm::translate(m, block[i].t);
-		m = glm::scale(m, block[i].s);
-		block[i].modelMat = m;
-	}
 
 
-	ad_ = ws_ = pn_ = 0;
+		m = glm::translate(m, robot[2].t);
+		m = glm::rotate(m, glm::radians(robot[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		m = glm::translate(m, -robot[2].t);
+		
+		/*glm::mat4 a = glm::mat4(1.0f);
+		a = glm::rotate(a, glm::radians(robot[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::vec3 r = glm::vec3(a * glm::vec4(robot[i].t, 1.0f));*/
 
 
 
-
-	if(!start)Start_Wait();
-	else {
-		if (v)D_animation();
-		else if (m)U_D_animation();
-	}
-	glutTimerFunc(10, TimerFunction, 1);
-	glutPostRedisplay();
-}
-
-GLchar ch[256]{};
-GLchar* filetobuf(const char* file)
-{
-	FILE* fptr;
-	long length;
-	char* buf;
-	fptr = fopen(file, "rb"); // Open file for reading
-	if (!fptr) // Return NULL on failure
-		return NULL;
-	fseek(fptr, 0, SEEK_END); // Seek to the end of the file
-	length = ftell(fptr); // Find out how many bytes into the file we are
-	buf = (char*)malloc(length + 1); // Allocate a buffer for the entire length of the file and a null terminator
-	fseek(fptr, 0, SEEK_SET); // Go back to the beginning of the file
-	fread(buf, length, 1, fptr); // Read the contents of the file in to the buffer
-	fclose(fptr); // Close the file
-	buf[length] = 0; // Null terminator
-	return buf; // Return the buffer
-}
-//¹öÅØ½º ¼¼ÀÌ´õ °´Ã¼ ¸¸µé±â
-void make_vertexShaders()
-{
-	GLchar* vertexSource;
-
-	//¹öÅØ½º ¼¼ÀÌ´õ ÀĞ¾î ÀúÀåÇÏ°í ÄÄÆÄÀÏ ÇÏ±â
-	//filetobuf : »ç¿ëÀÚÁ¤ÀÇ ÇÔ¼ö·Î ÅØ½ºÆ®¸¦ ÀĞ¾î¼­ ¹®ÀÚ¿­¿¡ ÀúÀåÇÏ´Â ÇÔ¼ö
-	vertexSource = filetobuf("vertex.glsl");
-	vertexShader = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertexShader, 1, &vertexSource, NULL);
-	glCompileShader(vertexShader);
-	GLint result;
-	GLchar errorLog[512];
-	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &result);
-	if (!result)
-	{
-		glGetShaderInfoLog(vertexShader, 512, NULL, errorLog);
-		cerr << "ERROR: vertex shader \n" << errorLog << std::endl;
-		return;
+		m = glm::translate(m, robot[i].t);
+		m = glm::scale(m, robot[i].s);
+		robot[i].modelMat = m;
 	}
 }
-
-//ÇÁ·¡±×¸ÕÆ® ¼¼ÀÌ´õ °´Ã¼ ¸¸µé±â
-void make_fragmentShaders()
-{
-	GLchar* fragmentSource;
-	//ÇÁ·¡±×¸ÕÆ® ¼¼ÀÌ´õ ÀĞ¾î ÀúÀåÇÏ°í ÄÄÆÄÀÏÇÏ±â
-	fragmentSource = filetobuf("fragment.glsl"); // ÇÁ·¡±×¼¼ÀÌ´õ ÀĞ¾î¿À±â
-	fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
-	glCompileShader(fragmentShader);
-	GLint result;
-	GLchar errorLog[512];
-	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &result);
-	if (!result)
-	{
-		glGetShaderInfoLog(fragmentShader, 512, NULL, errorLog);
-		std::cerr << "ERROR: frag_shader \n" << errorLog << std::endl;
-		return;
-	}
-}
-
-//¼¼ÀÌ´õ ÇÁ·Î±×·¥ ¸¸µé°í ¼¼ÀÌ´õ °´Ã¼ ¸µÅ©ÇÏ±â
-GLuint make_shaderProgram()
-{
-	GLuint shaderID;
-	shaderID = glCreateProgram(); //¼¼ÀÌ´õ ÇÁ·Î±×·¥ ¸¸µé±â
-	glAttachShader(shaderID, vertexShader); //¼¼ÀÌ´õ ÇÁ·Î±×·¥¿¡ ¹öÅØ½º ¼¼ÀÌ´õ ºÙÀÌ±â
-	glAttachShader(shaderID, fragmentShader); //¼¼ÀÌ´õ ÇÁ·Î±×·¥¿¡ ÇÁ·¡±×¸ÕÆ® ¼¼ÀÌ´õ ºÙÀÌ±â
-	glLinkProgram(shaderID); //¼¼ÀÌ´õ ÇÁ·Î±×·¥ ¸µÅ©ÇÏ±â
-	glDeleteShader(vertexShader); //¼¼ÀÌ´õ °´Ã¼¸¦ ¼¼ÀÌ´õ ÇÁ·Î±×·¥¿¡ ¸µÅ©ÇßÀ½À¸·Î ¼¼ÀÌ´õ °´Ã¼ ÀÚÃ¼´Â »èÁ¦ °¡´É
-	glDeleteShader(fragmentShader);
-	GLint result;
-	GLchar errorLog[512];
-	glGetProgramiv(shaderID, GL_LINK_STATUS, &result);// ¼¼ÀÌ´õ°¡ Àß ¿¬°áµÇ¾ú´ÂÁö Ã¼Å©ÇÏ±â
-	if (!result) {
-		glGetProgramInfoLog(shaderID, 512, NULL, errorLog);
-		std::cerr << "ERROR: shader program  \n" << errorLog << std::endl;
-		return false;
-	}
-	glUseProgram(shaderID); //¸¸µé¾îÁø ¼¼ÀÌ´õ ÇÁ·Î±×·¥ »ç¿ëÇÏ±â
-	//¿©·¯ °³ÀÇ ¼¼ÀÌ´õÇÁ·Î±×·¥ ¸¸µé ¼ö ÀÖ°í,±× Áß ÇÑ°³ÀÇ ÇÁ·Î±×·¥À» »ç¿ëÇÏ·Á¸é
-	//glUseProgram ÇÔ¼ö¸¦ È£ÃâÇÏ¿© »ç¿ë ÇÒ Æ¯Á¤ ÇÁ·Î±×·¥À» ÁöÁ¤ÇÑ´Ù
-	//»ç¿ëÇÏ±â Á÷Àü¿¡ È£ÃâÇÒ ¼ö ÀÖ´Ù
-	return shaderID;
-}
-
 

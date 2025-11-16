@@ -1,17 +1,23 @@
 //1-8
 #version 330 core
 layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 inputColor;
+layout (location = 1) in vec3 vNormal;
+
+out vec3 FragPos; //--- 객체의 위치값을 프래그먼트 세이더로 보낸다.
+out vec3 Normal;
 
 out vec3 outColor;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 proj;
 uniform vec3 faceColor;
+uniform mat3 modelNormal;
 
 
 void main() {
     gl_Position = proj * view * model * vec4(aPos, 1.0);
+	FragPos = vec3(model * vec4(aPos, 1.0));
+	Normal = normalize(modelNormal * vNormal);
 	outColor = faceColor;
 }
 /*

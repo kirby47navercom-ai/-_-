@@ -1,12 +1,34 @@
 //1-8
 #version 330 core
+in vec3 FragPos;
+in vec3 Normal;
 
-
-in vec3 outColor; //--- 버텍스 세이더에게서 전달 받음
 out vec4 FragColor; //--- 색상 출력
+
+uniform vec3 faceColor; //--- 면 색상
+uniform vec3 lightPos; //--- 조명의 위치
+uniform vec3 lightColor; //--- 조명의 색
+uniform vec3 viewPos; //--- 카메라 위치
+
 void main ()
 {
-	FragColor = vec4 (outColor, 1.0);
+	float ambientLight = 0.1; //--- 주변 조명 세기
+	vec3 ambient = ambientLight * lightColor; //--- 주변 조명 값
+	
+	vec3 normalVector = normalize(Normal);
+	vec3 lightDir = normalize(lightPos - FragPos); 
+	float diffuseLight = max(dot(normalVector, lightDir), 0.0); 
+	vec3 diffuse = diffuseLight * lightColor;
+	
+	int shininess = 128;
+	vec3 viewDir = normalize(viewPos - FragPos); 
+	vec3 reflectDir = reflect(-lightDir, normalVector);
+	float specularLight = max(dot(viewDir, reflectDir), 0.0);
+	specularLight = pow(specularLight, float(shininess)); 
+	vec3 specular = specularLight * lightColor;
+	
+	vec3 result = (ambient + diffuse + specular) * faceColor; //--- 최종 조명 설정된 픽셀 색상
+	FragColor = vec4(result, 1.0);
 }
 /*
 //--- fragment shader: fragment.glsl 파일에 저장
