@@ -36,6 +36,7 @@ void Initrobot();
 void updaterobot();
 void PassiveMotion(int x, int y);
 GLchar* filetobuf(const char* file);
+void SpecialUpKeyboard(int key, int x, int y);
 
 // 전역 변수
 GLint width = 1000, height = 1000;
@@ -433,6 +434,10 @@ bool g = false;
 //캐릭터가 위치한 발판은 검정색이 되게 ㄱㄱ
 
 
+//키 눌렸냐 안눌렸냐
+int key_ = 0;
+
+
 
 
 
@@ -575,6 +580,7 @@ int main(int argc, char** argv) {
 	glutMouseWheelFunc(MouseWheel);
 	glutSpecialFunc(SpecialKeyboard); // 특수 키(화살표) 함수 등록
 	glutPassiveMotionFunc(PassiveMotion);
+	glutSpecialUpFunc(SpecialUpKeyboard);
 
 	glutMainLoop();
 	return 0;
@@ -1181,6 +1187,7 @@ void SpecialKeyboard(int key, int x, int y)
 					robot[i].angle = camera_x_angle;
 				}
 			}
+			key_ = 1;
 			break;
 		case GLUT_KEY_DOWN:
 			for (int i = 0; i < robot.size(); ++i) {
@@ -1194,6 +1201,7 @@ void SpecialKeyboard(int key, int x, int y)
 					robot[i].angle = camera_x_angle + 180.0f;
 				}
 			}
+			key_ = 2;
 			break;
 		case GLUT_KEY_LEFT:
 			for (int i = 0; i < robot.size(); ++i) {
@@ -1207,6 +1215,7 @@ void SpecialKeyboard(int key, int x, int y)
 					robot[i].angle = camera_x_angle + 90.0f;
 				}
 			}
+			key_ = 3;
 			break;
 		case GLUT_KEY_RIGHT:
 			for (int i = 0; i < robot.size(); ++i) {
@@ -1220,6 +1229,7 @@ void SpecialKeyboard(int key, int x, int y)
 					robot[i].angle = camera_x_angle - 90.0f;
 				}
 			}
+			key_ = 4;
 			break;
 		default:
 			break;
@@ -1272,13 +1282,23 @@ void Keyupboard(unsigned char key, int x, int y) {
 	case 't':
 		camera_x_lock = false;;
 		break;
-
 	case 'g':
 		g = false;
 		break;
 	}
 }
-
+void SpecialUpKeyboard(int key, int x, int y) {
+	switch (key) {
+	case GLUT_KEY_UP:
+	case GLUT_KEY_LEFT:
+	case GLUT_KEY_RIGHT:
+	case GLUT_KEY_DOWN:
+		key_ = false;
+		break;
+	default:
+		break;
+	}
+}
 void Start_Wait() {
 	for (int i = 0;i < block.size();++i) {
 		if (block[i].size > 0) {
@@ -1753,16 +1773,133 @@ void updaterobot() {
 		m = glm::translate(m, robot[2].t);
 		m = glm::rotate(m, glm::radians(robot[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
 		m = glm::translate(m, -robot[2].t);
-		
-		/*glm::mat4 a = glm::mat4(1.0f);
-		a = glm::rotate(a, glm::radians(robot[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
-		glm::vec3 r = glm::vec3(a * glm::vec4(robot[i].t, 1.0f));*/
-
-
 
 		m = glm::translate(m, robot[i].t);
 		m = glm::scale(m, robot[i].s);
 		robot[i].modelMat = m;
 	}
+
+	static float walkPhase = 0.0f;
+	float maxLegAngle = glm::clamp(600.0f * speed, 10.0f, 90.0f);
+	float maxArmAngle = glm::clamp(400.0f * speed, 5.0f, 60.0f);
+
+	if (key_) {
+		walkPhase += speed * 120.0f;
+		if (walkPhase > 360.0f) walkPhase -= 360.0f;
+
+		float legAngle = maxLegAngle * sin(glm::radians(walkPhase));
+		float armAngle = maxArmAngle * sin(glm::radians(walkPhase + 180.0f));
+
+		glm::mat4 rotParent = glm::rotate(glm::mat4(1.0f), glm::radians(robot[2].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::vec3 baseAxis = glm::vec3(1.0f, 0.0f, 0.0f);
+		float sign = (key_ == 2) ? -1.0f : 1.0f;
+		float amplitude = (key_ == 3 || key_ == 4) ? 0.6f : 1.0f;
+		legAngle *= amplitude * sign;
+		armAngle *= amplitude * sign;
+
+		glm::vec3 legAxis = glm::normalize(glm::vec3(rotParent * glm::vec4(baseAxis, 0.0f)));
+		glm::vec3 armAxis = legAxis;
+
+		{
+			glm::mat4 mleg = glm::mat4(1.0f);
+			mleg = glm::translate(mleg, robot[2].t);
+			mleg *= rotParent;
+			mleg = glm::translate(mleg, robot[5].t - robot[2].t);
+			mleg = glm::rotate(mleg, glm::radians(legAngle), legAxis);
+			mleg = glm::scale(mleg, robot[5].s);
+			robot[5].modelMat = mleg;
+		}
+
+		{
+			glm::mat4 mleg = glm::mat4(1.0f);
+			mleg = glm::translate(mleg, robot[2].t);
+			mleg *= rotParent;
+			mleg = glm::translate(mleg, robot[6].t - robot[2].t);
+			mleg = glm::rotate(mleg, glm::radians(-legAngle), legAxis);
+			mleg = glm::scale(mleg, robot[6].s);
+			robot[6].modelMat = mleg;
+		}
+
+		{
+			glm::mat4 marm = glm::mat4(1.0f);
+			marm = glm::translate(marm, robot[2].t);
+			marm *= rotParent;
+			marm = glm::translate(marm, robot[3].t - robot[2].t);
+			marm = glm::rotate(marm, glm::radians(armAngle), armAxis);
+			marm = glm::scale(marm, robot[3].s);
+			robot[3].modelMat = marm;
+		}
+
+		{
+			glm::mat4 marm = glm::mat4(1.0f);
+			marm = glm::translate(marm, robot[2].t);
+			marm *= rotParent;
+			marm = glm::translate(marm, robot[4].t - robot[2].t);
+			marm = glm::rotate(marm, glm::radians(-armAngle), armAxis);
+			marm = glm::scale(marm, robot[4].s);
+			robot[4].modelMat = marm;
+		}
+	}
 }
 
+//switch (key)
+//{
+//case GLUT_KEY_UP:
+//	for (int i = 0; i < robot.size(); ++i) {
+//		glm::vec3 v = { 0.0f,0.0f,view != 2 ? 0.1f : -0.1f };
+//		glm::mat4 m(1.0f);
+//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+//		v = glm::vec3(m * glm::vec4(v, 1.0f));
+//		robot[i].t += v;
+//
+//		if (view != 2) {
+//			robot[i].angle = camera_x_angle;
+//		}
+//	}
+//	key_ = 1;
+//	break;
+//case GLUT_KEY_DOWN:
+//	for (int i = 0; i < robot.size(); ++i) {
+//		glm::vec3 v = { 0.0f,0.0f,view != 2 ? -0.1f : 0.1f };
+//		glm::mat4 m(1.0f);
+//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+//		v = glm::vec3(m * glm::vec4(v, 1.0f));
+//		robot[i].t += v;
+//
+//		if (view != 2) {
+//			robot[i].angle = camera_x_angle + 180.0f;
+//		}
+//	}
+//	key_ = 2;
+//	break;
+//case GLUT_KEY_LEFT:
+//	for (int i = 0; i < robot.size(); ++i) {
+//		glm::vec3 v = { view != 2 ? 0.1f : -0.1f ,0.0f,0.0f };
+//		glm::mat4 m(1.0f);
+//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+//		v = glm::vec3(m * glm::vec4(v, 1.0f));
+//		robot[i].t += v;
+//
+//		if (view != 2) {
+//			robot[i].angle = camera_x_angle + 90.0f;
+//		}
+//	}
+//	key_ = 3;
+//	break;
+//case GLUT_KEY_RIGHT:
+//	for (int i = 0; i < robot.size(); ++i) {
+//		glm::vec3 v = { view != 2 ? -0.1f : 0.1f,0.0f,0.0f };
+//		glm::mat4 m(1.0f);
+//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+//		v = glm::vec3(m * glm::vec4(v, 1.0f));
+//		robot[i].t += v;
+//
+//		if (view != 2) {
+//			robot[i].angle = camera_x_angle - 90.0f;
+//		}
+//	}
+//	key_ = 4;
+//	break;
+//default:
+//	break;
+//}
