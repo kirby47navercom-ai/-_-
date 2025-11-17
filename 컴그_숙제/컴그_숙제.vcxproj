@@ -70,6 +70,22 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <IncludePath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include\freetype;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\inc;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\lib\x64;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <IncludePath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include\freetype;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\inc;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\lib\x64;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include\freetype;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\inc;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\lib\x64;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include\freetype;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\inc;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제\include;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\컴그_숙제;C:\Users\kirby\OneDrive\바탕 화면\git\cg-homework\FMOD Studio API Windows\api\core\lib\x64;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -81,6 +97,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -96,6 +113,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -110,6 +128,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalOptions>glew32.lib freeglut.lib %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -126,19 +145,30 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalOptions>glew32.lib freeglut.lib %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>freetype.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="fragment.glsl" />
+    <None Include="fragment_image.glsl" />
+    <None Include="fragment_text.glsl" />
     <None Include="Idle.fbx" />
     <None Include="silverwolf.fbx" />
     <None Include="vertex.glsl" />
+    <None Include="vertex_image.glsl" />
+    <None Include="vertex_text.glsl" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="image.cpp" />
+    <ClCompile Include="resource.cpp" />
+    <ClCompile Include="text.cpp" />
     <ClCompile Include="숙제입니다.제가.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dtd.h" />
+    <ClInclude Include="image.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="text.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

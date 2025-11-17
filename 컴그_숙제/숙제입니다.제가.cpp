@@ -1,5 +1,5 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS //--- 프로그램 맨 앞에 선언할 것
-
+#include "Text.h"
 #include <gl/glew.h>
 #include <gl/freeglut.h>
 #include <gl/freeglut_ext.h> 
@@ -10,6 +10,11 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "dtd.h" 
+#include <gl/glu.h>
+#include "Image.h" 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include "fmod.hpp"
 #define ROBOT 7
 #define SIZE 800
 // 함수 선언
@@ -37,11 +42,15 @@ void updaterobot();
 void PassiveMotion(int x, int y);
 GLchar* filetobuf(const char* file);
 void SpecialUpKeyboard(int key, int x, int y);
-
+GLuint LoadTexture(const char* path);
 // 전역 변수
 GLint width = 1000, height = 1000;
 GLuint shaderProgramID, vertexShader, fragmentShader;
 GLuint VAO, VBO, EBO;
+GLuint uiShaderProgram;
+GLuint LoadTexture(const char* path);
+Image* uiImage = nullptr;
+Image* uiImage2 = nullptr;
 
 random_device rd;
 mt19937 gen(rd());
@@ -419,6 +428,8 @@ int view = 0; // 0 전체 1 캐릭터 1인칭 2 캐릭터 2인칭 3 캐릭터 3�
 
 //시작 위치
 glm::vec3 start_pos = glm::vec3(0.0f, 0.0f, 0.0f);
+//끝위치
+glm::vec3 end_pos = glm::vec3(0.0f, 0.0f, 0.0f);
 
 //로봇 변수들
 float speed = 0.01f;
@@ -437,6 +448,16 @@ bool g = false;
 //키 눌렸냐 안눌렸냐
 int key_ = 0;
 
+//텍스트 ㄱㄱ
+Text textUI;
+
+bool game_start = false;
+bool is_input_mode = true;
+int input_width = 0;
+int input_height = 0;
+bool is_input_width = true; 
+std::string input_buffer = ""; 
+Text input_text_ui;
 
 
 
@@ -448,9 +469,41 @@ GLfloat tranformy(int y) {
 	return ((height - (float)y) / (height / 2)) - 1.0f;
 }
 
+void Init_text()
+{
+	GLuint fontShader = LoadShader("vertex_text.glsl", "fragment_text.glsl");
+	glm::mat4 proj = glm::ortho(0.0f, 1280.0f, 0.0f, 720.0f);
 
+	textUI.Init("경기천년제목_Medium.ttf", fontShader, proj);
+}
+void Init_Image()
+{
+	stbi_set_flip_vertically_on_load(true);
+	uiShaderProgram = LoadShader("vertex_image.glsl", "fragment_image.glsl");
+
+	
+	GLuint imageTextureID = LoadTexture("main.png");
+
+	
+	if (imageTextureID) {
+		
+		glm::vec2 size1 = glm::vec2((float)width, (float)height);
+		glm::vec2 pos1 = glm::vec2((float)width / 2.0f, (float)height / 2.0f);
+		uiImage = new Image(imageTextureID, pos1, size1);
+
+		
+		//GLuint imageTextureID2 = LoadTexture("test_image_icon.png"); 
+		//glm::vec2 pos2 = glm::vec2(100.0f, 100.0f);
+		//glm::vec2 size2 = glm::vec2(100.0f, 100.0f);
+		//uiImage2 = new Image(imageTextureID2, pos2, size2);
+		//uiImage2->color = glm::vec4(1.0f, 0.5f, 0.5f, 1.0f); // 붉은 틴트 적용
+	}
+}
 //커비 zjql
 void InitData() {
+	
+	 start_pos = glm::vec3(0.0f, 0.0f, 0.0f);
+	end_pos = glm::vec3(0.0f, 0.0f, 0.0f);
 	view = 0;
 	camera_x_angle = 0.0f;
 	camera_y_angle = 0.0f;
@@ -462,22 +515,12 @@ void InitData() {
 	cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
 	modelPos = glm::vec3(0.0f, 0.0f, 0.0f);  // 도형 위치 (X, Y, Z 이동량)
 	camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
-	//block_width = 0;
-	//block_height = 0;
 	//나중에 지워주센
-	block_width = 5;
-	block_height = 5;
-	while (block_width < 5 || block_height < 5 || block_width > 25 || block_height > 25) {
-		cout << "가로 길이와 세로 길이를 입력해주세요." << endl;
-		cout << "* 길이 제한 : 5 ~ 25 *" << endl;
-		cout << "입력 : ";cin >> block_width >> block_height;
 
-		if (cin.fail()) {
-			cin.clear();
-			cin.ignore(10000, '\n');
-		}
+	//block_width = 5;
+	//block_height = 5;
 
-	}
+	game_start = true;
 	block_start = block_width * block_height;
 	system("chcp 65001");
 	fstream f{ "commend.txt" };
@@ -544,15 +587,17 @@ void Update() {
 }
 int main(int argc, char** argv) {
 	model.push_back(read_obj_file("cube.obj"));
-	InitData();
 
 	srand(static_cast<unsigned>(time(0))); // 랜덤 시드 초기화
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH 추가
 	glutInitWindowPosition(100, 100);
+
 	glutInitWindowSize(width, height);
 	glutCreateWindow("tung tung tung tung tung tung tung tung tung sours");
 
+	glutSetWindow(glutGetWindow());
+	glutReshapeWindow(width, height);
 	glewExperimental = GL_TRUE;
 	if (glewInit() != GLEW_OK) {
 		std::cerr << "GLEW 초기화 실패" << std::endl;
@@ -569,7 +614,9 @@ int main(int argc, char** argv) {
 	}
 	
 
+	Init_Image();
 	InitBuffers();
+	Init_text();
 	glutTimerFunc(10, TimerFunction, 1);
 	glutDisplayFunc(DrawScene);
 	glutReshapeFunc(Reshape);
@@ -592,170 +639,279 @@ int main(int argc, char** argv) {
 void DrawScene() {
 
 
-	glEnable(GL_DEPTH_TEST); // 깊이 테스트 활성화
-	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-	if(silver)
-		glEnable(GL_CULL_FACE);// 은면 제거 활성화
-	else
-		glDisable(GL_CULL_FACE);
+	if (game_start) {
 
 
-	
-
-
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 깊이 버퍼 클리어 추가
-
-	glUseProgram(shaderProgramID);
-	glBindVertexArray(VAO);
-
-	Update();
-
-
-
-	// Uniform 매트릭스 매핑
-	GLint modelLoc = glGetUniformLocation(shaderProgramID, "model");
-	GLint viewLoc = glGetUniformLocation(shaderProgramID, "view");
-	GLint projLoc = glGetUniformLocation(shaderProgramID, "proj");
-	GLint faceColorLoc = glGetUniformLocation(shaderProgramID, "faceColor");
-	GLint modelNormalLocation = glGetUniformLocation(shaderProgramID, "modelNormal"); //--- modelNormal 값 전달: 모델 매트릭스의 역전치 행렬
+		glEnable(GL_DEPTH_TEST); // 깊이 테스트 활성화
+		glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+		if (silver)
+			glEnable(GL_CULL_FACE);// 은면 제거 활성화
+		else
+			glDisable(GL_CULL_FACE);
 
 
 
 
 
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 깊이 버퍼 클리어 추가
+
+		glUseProgram(shaderProgramID);
+		glBindVertexArray(VAO);
+
+		Update();
+
+
+
+		// Uniform 매트릭스 매핑
+		GLint modelLoc = glGetUniformLocation(shaderProgramID, "model");
+		GLint viewLoc = glGetUniformLocation(shaderProgramID, "view");
+		GLint projLoc = glGetUniformLocation(shaderProgramID, "proj");
+		GLint faceColorLoc = glGetUniformLocation(shaderProgramID, "faceColor");
+		GLint modelNormalLocation = glGetUniformLocation(shaderProgramID, "modelNormal"); //--- modelNormal 값 전달: 모델 매트릭스의 역전치 행렬
+
+
+
+
+
+		glViewport(0, 0, width, height);
+		{
+			// Camera (View) 및 Projection 매트릭스 설정
+			glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f)); // 뷰 매트릭스
+			glm::mat4 proj;
+
+			if (op) {
+				float aspect = (float)width / (float)height;
+				float size = 5.0f;
+				proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
+			}
+			else {
+				proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+			}
+
+
+			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+			glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+			GLuint offset = 0;
+			for (int i = 0; i < block.size(); ++i) {
+				for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
+					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+					glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
+					glDrawArrays(GL_TRIANGLES, offset, 3);
+					offset += 3;
+
+				}
+			}
+			if (!robot.empty()) {
+				for (int i = 0; i < robot.size(); ++i) {
+					for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
+						glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
+						glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+						glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
+						glDrawArrays(GL_TRIANGLES, offset, 3);
+						offset += 3;
+					}
+				}
+			}
+		}
+		glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
+		{
+			float maxrange = max(block_width, block_height) / 2.0f + 2.0f;
+
+
+			glm::mat4 view = glm::lookAt(
+				glm::vec3(0.0f, 30.0f, 0.0f),
+				glm::vec3(0.0f, 0.0f, 0.0f),
+				glm::vec3(0.0f, 0.0f, -1.0f)
+			);
+
+			// 직교 투영을 블록 범위에 맞게 조정
+			glm::mat4 proj = glm::ortho(-maxrange, maxrange, -maxrange, maxrange, 0.1f, 50.0f);
+
+			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+			glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+			GLuint offset = 0;
+			for (int i = 0; i < block.size(); ++i) {
+				for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
+					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+					glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
+					glDrawArrays(GL_TRIANGLES, offset, 3);
+					offset += 3;
+				}
+
+			}
+			if (!robot.empty()) {
+				for (int i = 0; i < robot.size(); ++i) {
+					for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
+						glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
+						glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+						glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
+						glDrawArrays(GL_TRIANGLES, offset, 3);
+						offset += 3;
+					}
+				}
+			}
+		}
+
+
+
+		GLint lightPosLocation = glGetUniformLocation(shaderProgramID, "lightPos"); //--- lightPos 값 전달: (0.0, 0.0, 5.0);
+		GLint lightColorLocation = glGetUniformLocation(shaderProgramID, "lightColor"); //--- lightColor 값 전달: (1.0, 1.0, 1.0) 백색
+		GLint viewPosLocation = glGetUniformLocation(shaderProgramID, "viewPos"); //--- viewPos 값 전달: 카메라 위치
+
+
+
+
+		glm::vec3 lightPos = { 0.0f,200.0f,0.0f };
+		//glm::mat4 lightModelMat = shape.back().modelMat;
+		//lightPos = glm::vec3(lightModelMat * glm::vec4(lightPos, 1.0f));
+
+
+		glUniform3f(lightPosLocation, 0, 20, 0);
+
+
+		glUniform3f(lightColorLocation, light_color.x, light_color.y, light_color.z);
+
+		glUniform3f(viewPosLocation, cameraPos.x, cameraPos.y, cameraPos.z);
+
+
+
+
+		glBindVertexArray(0);
 	glViewport(0, 0, width, height);
-	{
-		// Camera (View) 및 Projection 매트릭스 설정
-		glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f)); // 뷰 매트릭스
-		glm::mat4 proj;
 
-		if (op) {
-			float aspect = (float)width / (float)height;
-			float size = 5.0f;
-			proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	textUI.Draw("asd", 50, 300, 1.0f, glm::vec3(1, 1, 1));
+
+
+
+
+	glUseProgram(0); 
+
+
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+
+	gluOrtho2D(-50, width, 0, height);
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+	glTranslatef(-50.0f, 0.0f, 0.0f);
+	glColor3f(1.0f, 1.0f, 0.0f);
+
+	char statusText[256];
+
+	//시점 관련된거 그리고 캐릭 위치
+	const char* viewNames[] = { "ALL(0)", "TPS(1)", "QUARTER(2)", "FPS(3)" };
+	sprintf(statusText, "view: %s | player position: (%.2f, %.2f) | Key: %d",
+		viewNames[view],
+		robot.empty() ? 0.0f : robot[2].t.x,
+		robot.empty() ? 0.0f : robot[2].t.z,
+		key_);
+	glRasterPos2i(0, height-20);
+	for (const char* c = statusText; *c != '\0'; c++) {
+		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+	}
+
+	//이게 미로가 몇 x 몇인지,시작 위치,끝 위치
+	sprintf(statusText, "Maze Size: %d x %d | Start Position: (%.2f, %.2f) | End Color: (%.2f, %.2f)",
+		block_width, block_height,
+		start_pos.x, start_pos.z,
+		light_color.x, light_color.y);
+	glRasterPos2i(0, height - 40);
+	for (const char* c = statusText; *c != '\0'; c++) {
+		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+	}
+	glPopMatrix();
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);
+
+	glEnable(GL_DEPTH_TEST);
+	}
+	else {
+
+		glEnable(GL_DEPTH_TEST);
+		glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+		// ... (glEnable(GL_CULL_FACE) 등)
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		if (uiImage && uiShaderProgram != 0) {
+			glm::mat4 uiProj = glm::ortho(0.0f, (float)width, 0.0f, (float)height);
+			uiImage->Draw(uiShaderProgram, uiProj);
+		}
+
+		glDisable(GL_DEPTH_TEST);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+		glm::mat4 uiProj = glm::ortho(0.0f, (float)width, 0.0f, (float)height);
+
+		std::string prompt;
+		if (is_input_width) {
+			prompt = "WIDTH: ";
 		}
 		else {
-			proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+			prompt = "HEIGHT: ";
 		}
+		prompt += input_buffer;
 
+		// 텍스트 출력 (현재 입력 버퍼 내용 표시)
+		textUI.Draw(prompt, width / 2.0f - 200.0f, 200, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+		// 렌더링 후 상태 복구
+		glDisable(GL_BLEND);
+		glEnable(GL_DEPTH_TEST);
 
-		GLuint offset = 0;
-		for (int i = 0; i < block.size(); ++i) {
-			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
-				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
-				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
-				glDrawArrays(GL_TRIANGLES, offset, 3);
-				offset += 3;
+		glPopMatrix();
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+		glMatrixMode(GL_MODELVIEW);
 
-			}
-		}
-		if (!robot.empty()) {
-			for (int i = 0; i < robot.size(); ++i) {
-				for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
-					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
-					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
-					glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
-					glDrawArrays(GL_TRIANGLES, offset, 3);
-					offset += 3;
-				}
-			}
-		}
-	}
-	glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
-	{
-		float maxrange = max(block_width, block_height) / 2.0f + 2.0f; 
-
-	
-		glm::mat4 view = glm::lookAt(
-			glm::vec3(0.0f, 30.0f, 0.0f),    
-			glm::vec3(0.0f, 0.0f, 0.0f),     
-			glm::vec3(0.0f, 0.0f, -1.0f)     
-		);
-
-		// 직교 투영을 블록 범위에 맞게 조정
-		glm::mat4 proj = glm::ortho(-maxrange, maxrange,-maxrange, maxrange,0.1f, 50.0f);
-
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-
-		GLuint offset = 0;
-		for (int i = 0; i < block.size(); ++i) {
-			for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
-				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
-				glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
-				glDrawArrays(GL_TRIANGLES, offset, 3);
-				offset += 3;
-			}
-				
-		}
-		if (!robot.empty()) {
-			for (int i = 0; i < robot.size(); ++i) {
-				for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
-					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
-					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
-					glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
-					glDrawArrays(GL_TRIANGLES, offset, 3);
-					offset += 3;
-				}
-			}
-		}
+		glEnable(GL_DEPTH_TEST);
 	}
 
 
 
-	GLint lightPosLocation = glGetUniformLocation(shaderProgramID, "lightPos"); //--- lightPos 값 전달: (0.0, 0.0, 5.0);
-	GLint lightColorLocation = glGetUniformLocation(shaderProgramID, "lightColor"); //--- lightColor 값 전달: (1.0, 1.0, 1.0) 백색
-	GLint viewPosLocation = glGetUniformLocation(shaderProgramID, "viewPos"); //--- viewPos 값 전달: 카메라 위치
 
-
-
-
-	glm::vec3 lightPos = { 0.0f,200.0f,0.0f };
-	//glm::mat4 lightModelMat = shape.back().modelMat;
-	//lightPos = glm::vec3(lightModelMat * glm::vec4(lightPos, 1.0f));
-
-
-	glUniform3f(lightPosLocation, 0, 20, 0);
-
-
-	glUniform3f(lightColorLocation, light_color.x, light_color.y, light_color.z);
-
-	glUniform3f(viewPosLocation, cameraPos.x, cameraPos.y, cameraPos.z);
-
-
-
-
-	glBindVertexArray(0);
 	glutSwapBuffers();
 }
 
 
 void Reshape(int w, int h) {
-	glViewport(0, 0, w, h);
-	width = w;
-	height = h;
+	if (w != width || h != height) {
+		
+		glViewport(0, 0, w, h);
+		glutReshapeWindow(width, height);
+
+		
+	}
 }
 
 void Mouse(int button, int state, int x, int y)
 {
-	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN&&(view ==0)) {
-		left_mousex =x, left_mousey = y;
-		left_mouse = true;
-	}
-	if (button == GLUT_LEFT_BUTTON && state == GLUT_UP && (view == 0)) {
-		left_mouse = false;
-	}
-	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN && view == 0) {
-		right_mousex = x, right_mousey = y;
-		right_mouse = true;
-	}
-	if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP && view == 0) {
-		right_mouse = false;
+	if (game_start) {
+		if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && (view == 0)) {
+			left_mousex = x, left_mousey = y;
+			left_mouse = true;
+		}
+		if (button == GLUT_LEFT_BUTTON && state == GLUT_UP && (view == 0)) {
+			left_mouse = false;
+		}
+		if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN && view == 0) {
+			right_mousex = x, right_mousey = y;
+			right_mouse = true;
+		}
+		if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP && view == 0) {
+			right_mouse = false;
+		}
 	}
 
 	glutPostRedisplay();
@@ -763,183 +919,188 @@ void Mouse(int button, int state, int x, int y)
 }
 void Motion(int x, int y)
 {
-	if (left_mouse) {
-		int deltax = x - left_mousex;
-		int deltay = y - left_mousey;
-
-		
-
-		if (deltax != 0) {
-			float angle = deltax * sense;
-			camera_x_angle += angle;
-			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
-			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
-		}
-
-		if (deltay != 0&& !camera_x_lock) {
-			float angle = -deltay * sense;
-			camera_y_angle += angle;
-			glm::vec3 c = cameraPos - camera_move;
-			glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
-			glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
-			cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
-		}
-
-		left_mousex = x;
-		left_mousey = y;
+	if (game_start) {
+		if (left_mouse) {
+			int deltax = x - left_mousex;
+			int deltay = y - left_mousey;
 
 
 
-		glutPostRedisplay();
-	}
-	if (right_mouse) {
-		int deltax = x - right_mousex;
-		int deltay = y - right_mousey;
-
-		if (deltax != 0) {
-			float angle = deltax * 0.05f;
-			glm::vec3 right = glm::normalize(glm::cross(camera_move - cameraPos, glm::vec3(0.0f, 1.0f, 0.0f)));
-			camera_move += right * angle;
-		}
-
-		if (deltay != 0) {
-			float moveAmount = -deltay * 0.05f;
-			glm::vec3 forward = glm::normalize(camera_move - cameraPos);
-			glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
-			glm::vec3 up = glm::normalize(glm::cross(right, forward));
-			camera_move += up * moveAmount;
-		}
-
-
-		right_mousex = x;
-		right_mousey = y;
-		glutPostRedisplay();
-	}
-}
-void PassiveMotion(int x, int y) {
-	if (view == 1 && !g) {
-		int center_x = width / 2;
-		int center_y = height / 2;
-		int deltax = -x + left_mousex;
-		int deltay = y - left_mousey;
-		float custom_sense = sense * 2.0f;
-		float old_y_angle = camera_y_angle;
-
-		if (deltax != 0) {
-			float angle = deltax * custom_sense;
-			camera_x_angle += angle;
-
-			if (camera_x_angle < -360.0f) camera_x_angle += 360.0f;
-			if (camera_x_angle > 360.0f) camera_x_angle -= 360.0f;
-
-			if (angle != 0.0f) {
+			if (deltax != 0) {
+				float angle = deltax * sense;
+				camera_x_angle += angle;
 				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
-				camera_move = glm::vec3(rotation * glm::vec4(camera_move - cameraPos, 1.0f)) + cameraPos;
-			}
-		}
-
-		if (deltay != 0 && !camera_x_lock) {
-			float angle = -deltay * custom_sense;
-			camera_y_angle += angle;
-
-			if (camera_y_angle < -45.0f || camera_y_angle > 45.0f) {
-				camera_y_angle = old_y_angle;
-				angle = 0.0f;
+				cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
 			}
 
-			if (angle != 0.0f) {
-
-				glm::vec3 c = camera_move - cameraPos; 
-				glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
-				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
-
-
-				camera_move = glm::vec3(rotation * glm::vec4(camera_move - cameraPos, 1.0f)) + cameraPos;
-			}
-		}
-
-		if (x != center_x || y != center_y) {
-			glutWarpPointer(center_x, center_y);
-			left_mousex = center_x;
-			left_mousey = center_y;
-		}
-		else {
-			left_mousex = x;
-			left_mousey = y;
-		}
-	}
-	if (view == 3&& !g) {
-
-		int center_x = width / 2;
-		int center_y = height / 2;
-
-		int deltax = x - left_mousex;
-		int deltay = y - left_mousey;
-
-		float custom_sense = sense * 2.0f;
-		float old_y_angle = camera_y_angle;
-
-		if (deltax != 0) {
-			float angle = deltax * custom_sense;
-
-			camera_x_angle += angle;
-
-			if (camera_x_angle < -360.0f) camera_x_angle += 360.0f;
-			if (camera_x_angle > 360.0f) camera_x_angle -= 360.0f;
-
-			if (angle != 0.0f) {
-				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
-				cameraPos = glm::vec3(rotation * glm::vec4(cameraPos - camera_move, 1.0f)) + camera_move;
-			}
-		}
-
-		if (deltay != 0 && !camera_x_lock) {
-			float angle = -deltay * custom_sense;
-
-			camera_y_angle += angle;
-
-			if (camera_y_angle < -60.0f || camera_y_angle > 30.0f) {
-				camera_y_angle = old_y_angle;
-				angle = 0.0f;
-			}
-
-			if (angle != 0.0f) {
+			if (deltay != 0 && !camera_x_lock) {
+				float angle = -deltay * sense;
+				camera_y_angle += angle;
 				glm::vec3 c = cameraPos - camera_move;
 				glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
 				glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
-				cameraPos = glm::vec3(rotation * glm::vec4(cameraPos - camera_move, 1.0f)) + camera_move;
+				cameraPos = glm::vec3(rotation * glm::vec4(cameraPos, 1.0f));
 			}
-		}
 
-		if (x != center_x || y != center_y) {
-			glutWarpPointer(center_x, center_y);
-
-			left_mousex = center_x;
-			left_mousey = center_y;
-		}
-		else {
 			left_mousex = x;
 			left_mousey = y;
+
+
+
+			glutPostRedisplay();
+		}
+		if (right_mouse) {
+			int deltax = x - right_mousex;
+			int deltay = y - right_mousey;
+
+			if (deltax != 0) {
+				float angle = deltax * 0.05f;
+				glm::vec3 right = glm::normalize(glm::cross(camera_move - cameraPos, glm::vec3(0.0f, 1.0f, 0.0f)));
+				camera_move += right * angle;
+			}
+
+			if (deltay != 0) {
+				float moveAmount = -deltay * 0.05f;
+				glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+				glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+				glm::vec3 up = glm::normalize(glm::cross(right, forward));
+				camera_move += up * moveAmount;
+			}
+
+
+			right_mousex = x;
+			right_mousey = y;
+			glutPostRedisplay();
+		}
+	}
+}
+void PassiveMotion(int x, int y) {
+	if (game_start) {
+		if (view == 1 && !g) {
+			int center_x = width / 2;
+			int center_y = height / 2;
+			int deltax = -x + left_mousex;
+			int deltay = y - left_mousey;
+			float custom_sense = sense * 2.0f;
+			float old_y_angle = camera_y_angle;
+
+			if (deltax != 0) {
+				float angle = deltax * custom_sense;
+				camera_x_angle += angle;
+
+				if (camera_x_angle < -360.0f) camera_x_angle += 360.0f;
+				if (camera_x_angle > 360.0f) camera_x_angle -= 360.0f;
+
+				if (angle != 0.0f) {
+					glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+					camera_move = glm::vec3(rotation * glm::vec4(camera_move - cameraPos, 1.0f)) + cameraPos;
+				}
+			}
+
+			if (deltay != 0 && !camera_x_lock) {
+				float angle = -deltay * custom_sense;
+				camera_y_angle += angle;
+
+				if (camera_y_angle < -45.0f || camera_y_angle > 45.0f) {
+					camera_y_angle = old_y_angle;
+					angle = 0.0f;
+				}
+
+				if (angle != 0.0f) {
+
+					glm::vec3 c = camera_move - cameraPos;
+					glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
+					glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
+
+
+					camera_move = glm::vec3(rotation * glm::vec4(camera_move - cameraPos, 1.0f)) + cameraPos;
+				}
+			}
+
+			if (x != center_x || y != center_y) {
+				glutWarpPointer(center_x, center_y);
+				left_mousex = center_x;
+				left_mousey = center_y;
+			}
+			else {
+				left_mousex = x;
+				left_mousey = y;
+			}
+		}
+		if (view == 3 && !g) {
+
+			int center_x = width / 2;
+			int center_y = height / 2;
+
+			int deltax = x - left_mousex;
+			int deltay = y - left_mousey;
+
+			float custom_sense = sense * 2.0f;
+			float old_y_angle = camera_y_angle;
+
+			if (deltax != 0) {
+				float angle = deltax * custom_sense;
+
+				camera_x_angle += angle;
+
+				if (camera_x_angle < -360.0f) camera_x_angle += 360.0f;
+				if (camera_x_angle > 360.0f) camera_x_angle -= 360.0f;
+
+				if (angle != 0.0f) {
+					glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+					cameraPos = glm::vec3(rotation * glm::vec4(cameraPos - camera_move, 1.0f)) + camera_move;
+				}
+			}
+
+			if (deltay != 0 && !camera_x_lock) {
+				float angle = -deltay * custom_sense;
+
+				camera_y_angle += angle;
+
+				if (camera_y_angle < -60.0f || camera_y_angle > 30.0f) {
+					camera_y_angle = old_y_angle;
+					angle = 0.0f;
+				}
+
+				if (angle != 0.0f) {
+					glm::vec3 c = cameraPos - camera_move;
+					glm::vec3 v = glm::normalize(glm::cross(c, glm::vec3(0.0f, 1.0f, 0.0f)));
+					glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angle), v);
+					cameraPos = glm::vec3(rotation * glm::vec4(cameraPos - camera_move, 1.0f)) + camera_move;
+				}
+			}
+
+			if (x != center_x || y != center_y) {
+				glutWarpPointer(center_x, center_y);
+
+				left_mousex = center_x;
+				left_mousey = center_y;
+			}
+			else {
+				left_mousex = x;
+				left_mousey = y;
+			}
+
+			glutPostRedisplay();
+		}
+	}
+}
+void MouseWheel(int wheel, int direction, int x, int y)
+{
+	if (game_start) {
+		float zoomSpeed = 1.0f;
+
+		glm::vec3 forward = glm::normalize(camera_move - cameraPos);
+
+		if (direction > 0) {
+			cameraPos += forward * zoomSpeed;
+		}
+		else {
+			cameraPos -= forward * zoomSpeed;
 		}
 
 		glutPostRedisplay();
 	}
-
-}
-void MouseWheel(int wheel, int direction, int x, int y)
-{
-	float zoomSpeed = 1.0f;
-
-	glm::vec3 forward = glm::normalize(camera_move - cameraPos);
-
-	if (direction > 0) {
-		cameraPos += forward * zoomSpeed;
-	}
-	else {
-		cameraPos -= forward * zoomSpeed;
-	}
-
-	glutPostRedisplay();
 }
 void camera_y_rotate(bool b) {
 	glm::mat4 m = glm::mat4(1.0f);
@@ -966,7 +1127,48 @@ void camera_wasd(char i) {
 }
 void Keyboard(unsigned char key, int x, int y)
 {
-	if(start)
+	if (!game_start && is_input_mode) {
+
+
+		if (key >= '0' && key <= '9') {
+
+			input_buffer += key;
+		}
+
+		else if (key == '\b' || key == 127) {
+			if (!input_buffer.empty()) {
+				input_buffer.pop_back();
+			}
+		}
+
+		else if (key == 13) {
+			if (!input_buffer.empty()) {
+
+
+				int value = std::stoi(input_buffer);
+
+
+				if (value >= 5 && value <= 25) {
+					if (is_input_width) {
+						block_width = value;
+						is_input_width = false;
+					}
+					else {
+						block_height = value;
+						is_input_mode = false;  
+						InitData();
+					}
+				}
+				else {
+					input_buffer = "";
+				}
+			}
+		}
+		glutPostRedisplay();
+		return; 
+	}
+
+	if(start&&game_start)
 	switch (key)
 	{
 	case 'o':
@@ -1064,7 +1266,14 @@ void Keyboard(unsigned char key, int x, int y)
 	break;
 	case 'c':
 	system("cls");
-	InitData();
+	block_width = 0;
+	block_height = 0;
+	game_start = false;
+	is_input_mode = true;
+	input_width = 0;
+	input_height = 0;
+	is_input_width = true;
+	input_buffer = "";
 	break;
 	case 'q':
 	exit(0);
@@ -1165,138 +1374,144 @@ void Keyboard(unsigned char key, int x, int y)
 // 특수 키(화살표) 처리 함수: 도형 회전
 void SpecialKeyboard(int key, int x, int y)
 {
-	if (recall && view != 0) {
-		glm::vec3 old_robot_t[ROBOT];
-		for (int i = 0; i < robot.size(); ++i) {
-			old_robot_t[i] = robot[i].t;
+	if (game_start) {
+		if (recall && view != 0) {
+			glm::vec3 old_robot_t[ROBOT];
+			for (int i = 0; i < robot.size(); ++i) {
+				old_robot_t[i] = robot[i].t;
+			}
+
+			glm::vec3 robotHalf = robotbb.halfExtents;
+
+			switch (key)
+			{
+			case GLUT_KEY_UP:
+				for (int i = 0; i < robot.size(); ++i) {
+					glm::vec3 v = { 0.0f,0.0f,view != 2 ? 0.1f : -0.1f };
+					glm::mat4 m(1.0f);
+					m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+					v = glm::vec3(m * glm::vec4(v, 1.0f));
+					robot[i].t += v;
+
+					if (view != 2) {
+						robot[i].angle = camera_x_angle;
+					}
+				}
+				key_ = 1;
+				break;
+			case GLUT_KEY_DOWN:
+				for (int i = 0; i < robot.size(); ++i) {
+					glm::vec3 v = { 0.0f,0.0f,view != 2 ? -0.1f : 0.1f };
+					glm::mat4 m(1.0f);
+					m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+					v = glm::vec3(m * glm::vec4(v, 1.0f));
+					robot[i].t += v;
+
+					if (view != 2) {
+						robot[i].angle = camera_x_angle + 180.0f;
+					}
+				}
+				key_ = 2;
+				break;
+			case GLUT_KEY_LEFT:
+				for (int i = 0; i < robot.size(); ++i) {
+					glm::vec3 v = { view != 2 ? 0.1f : -0.1f ,0.0f,0.0f };
+					glm::mat4 m(1.0f);
+					m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+					v = glm::vec3(m * glm::vec4(v, 1.0f));
+					robot[i].t += v;
+
+					if (view != 2) {
+						robot[i].angle = camera_x_angle + 90.0f;
+					}
+				}
+				key_ = 3;
+				break;
+			case GLUT_KEY_RIGHT:
+				for (int i = 0; i < robot.size(); ++i) {
+					glm::vec3 v = { view != 2 ? -0.1f : 0.1f,0.0f,0.0f };
+					glm::mat4 m(1.0f);
+					m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
+					v = glm::vec3(m * glm::vec4(v, 1.0f));
+					robot[i].t += v;
+
+					if (view != 2) {
+						robot[i].angle = camera_x_angle - 90.0f;
+					}
+				}
+				key_ = 4;
+				break;
+			default:
+				break;
+			}
+
+			glm::vec3 newRobotCenter = robot[2].t;
+			bool collided = false;
+			for (auto& wall : block) {
+				if (CheckCollision(newRobotCenter, robotHalf, wall)) {
+					if (wall.start) {
+
+					}
+					else if (wall.end) {
+
+						recall = false;
+						view = 0;
+						robot.clear();
+						cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
+						camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
+						camera_x_angle = 0.0f;
+						camera_y_angle = 0.0f;
+						break;
+					}
+					else if (wall.line) {
+
+						wall.colors = { 0.0f,0.0f,0.0f };
+					}
+					else {
+
+						collided = true;
+					}
+				}
+				else if (!CheckCollision(robot[2].t, robotHalf, wall) && wall.line) {
+					wall.colors = { 0.8f,0.8f,0.8f };
+
+				}
+			}
+
+			if (collided) {
+				for (int i = 0; i < robot.size(); ++i) {
+					robot[i].t = old_robot_t[i];
+				}
+			}
+
+			glutPostRedisplay();
 		}
-
-		glm::vec3 robotHalf = robotbb.halfExtents;
-
-		switch (key)
-		{
+	}
+}
+void Keyupboard(unsigned char key, int x, int y) {
+	if (game_start) {
+		switch (key) {
+		case 't':
+			camera_x_lock = false;;
+			break;
+		case 'g':
+			g = false;
+			break;
+		}
+	}
+}
+void SpecialUpKeyboard(int key, int x, int y) {
+	if (game_start) {
+		switch (key) {
 		case GLUT_KEY_UP:
-			for (int i = 0; i < robot.size(); ++i) {
-				glm::vec3 v = { 0.0f,0.0f,view != 2 ? 0.1f : -0.1f };
-				glm::mat4 m(1.0f);
-				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-				v = glm::vec3(m * glm::vec4(v, 1.0f));
-				robot[i].t += v;
-
-				if (view != 2) {
-					robot[i].angle = camera_x_angle;
-				}
-			}
-			key_ = 1;
-			break;
-		case GLUT_KEY_DOWN:
-			for (int i = 0; i < robot.size(); ++i) {
-				glm::vec3 v = { 0.0f,0.0f,view != 2 ? -0.1f : 0.1f };
-				glm::mat4 m(1.0f);
-				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-				v = glm::vec3(m * glm::vec4(v, 1.0f));
-				robot[i].t += v;
-
-				if (view != 2) {
-					robot[i].angle = camera_x_angle + 180.0f;
-				}
-			}
-			key_ = 2;
-			break;
 		case GLUT_KEY_LEFT:
-			for (int i = 0; i < robot.size(); ++i) {
-				glm::vec3 v = { view != 2 ? 0.1f : -0.1f ,0.0f,0.0f };
-				glm::mat4 m(1.0f);
-				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-				v = glm::vec3(m * glm::vec4(v, 1.0f));
-				robot[i].t += v;
-
-				if (view != 2) {
-					robot[i].angle = camera_x_angle + 90.0f;
-				}
-			}
-			key_ = 3;
-			break;
 		case GLUT_KEY_RIGHT:
-			for (int i = 0; i < robot.size(); ++i) {
-				glm::vec3 v = { view != 2 ? -0.1f : 0.1f,0.0f,0.0f };
-				glm::mat4 m(1.0f);
-				m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-				v = glm::vec3(m * glm::vec4(v, 1.0f));
-				robot[i].t += v;
-
-				if (view != 2) {
-					robot[i].angle = camera_x_angle - 90.0f;
-				}
-			}
-			key_ = 4;
+		case GLUT_KEY_DOWN:
+			key_ = false;
 			break;
 		default:
 			break;
 		}
-
-		glm::vec3 newRobotCenter = robot[2].t;
-		bool collided = false;
-		for (auto& wall : block) {
-			if (CheckCollision(newRobotCenter, robotHalf, wall)) {
-				if (wall.start) {
-					cout << wall.name << endl;
-				}
-				else if (wall.end) {
-					cout << wall.name << endl;
-					recall = false;
-					view = 0;
-					robot.clear();
-					cameraPos = glm::vec3(0.0f, 20.0f, 40.0f);
-					camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
-					camera_x_angle = 0.0f;
-					camera_y_angle = 0.0f;
-					break;
-				}
-				else if (wall.line) {
-					cout << wall.name << endl;
-					wall.colors = { 0.0f,0.0f,0.0f };
-				}
-				else {
-					cout << wall.name << endl;
-					collided = true;
-				}
-			}
-			else if (!CheckCollision(robot[2].t, robotHalf, wall) && wall.line) {
-				wall.colors = { 0.8f,0.8f,0.8f };
-
-			}
-		}
-
-		if (collided) {
-			for (int i = 0; i < robot.size(); ++i) {
-				robot[i].t = old_robot_t[i];
-			}
-		}
-
-		glutPostRedisplay();
-	}
-}
-void Keyupboard(unsigned char key, int x, int y) {
-	switch (key) {
-	case 't':
-		camera_x_lock = false;;
-		break;
-	case 'g':
-		g = false;
-		break;
-	}
-}
-void SpecialUpKeyboard(int key, int x, int y) {
-	switch (key) {
-	case GLUT_KEY_UP:
-	case GLUT_KEY_LEFT:
-	case GLUT_KEY_RIGHT:
-	case GLUT_KEY_DOWN:
-		key_ = false;
-		break;
-	default:
-		break;
 	}
 }
 void Start_Wait() {
@@ -1350,33 +1565,35 @@ void camera_move_update() {
 }
 void TimerFunction(int value)
 {
-	camera_move -= glm::vec3(ad_ * 0.5f, ws_ * 0.5f, pn_ * 0.5f);
-	
-	for (int i = 0;i < block.size();++i) {
-		glm::mat4 m = glm::mat4(1.0f);
+	if (game_start) {
+		camera_move -= glm::vec3(ad_ * 0.5f, ws_ * 0.5f, pn_ * 0.5f);
 
-		m = glm::translate(m, block[i].t);
-		m = glm::rotate(m, glm::radians(block[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
-		m = glm::scale(m, block[i].s);
-		block[i].modelMat = m;
-	}
-	if (recall)
-	updaterobot();
-	
+		for (int i = 0;i < block.size();++i) {
+			glm::mat4 m = glm::mat4(1.0f);
 
-	if (recall)
-	camera_move_update();
+			m = glm::translate(m, block[i].t);
+			m = glm::rotate(m, glm::radians(block[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+			m = glm::scale(m, block[i].s);
+			block[i].modelMat = m;
+		}
+		if (recall)
+			updaterobot();
 
 
+		if (recall)
+			camera_move_update();
 
 
 
-	ad_ = ws_ = pn_ = 0;
 
-	if(!start)Start_Wait();
-	else {
-		if (v)D_animation();
-		else if (m)U_D_animation();
+
+		ad_ = ws_ = pn_ = 0;
+
+		if (!start)Start_Wait();
+		else {
+			if (v)D_animation();
+			else if (m)U_D_animation();
+		}
 	}
 	glutTimerFunc(10, TimerFunction, 1);
 	glutPostRedisplay();
@@ -1677,12 +1894,14 @@ void GenerateMaze() {
 				if (block[index].start) {
 					block[index].colors = { 1.0f, 0.0f, 0.0f }; // 시작 색상
 					start_pos = block[index].t;
-					cout << block[index].t.x << ", " << block[index].t.z << endl;
+					start_pos.x = block[index].t.x;
+					start_pos.z = block[index].t.z;
 					block[index].name = "start";
 				}
 				else if (block[index].end) {
 					block[index].colors = { 0.0f, 1.0f, 0.0f }; // 출구 색상
-					cout << block[index].t.x << ", " << block[index].t.z << endl;
+					end_pos.x = block[index].t.x;
+					end_pos.z = block[index].t.z;
 					block[index].name = "exit";
 				}
 				else {
@@ -1765,141 +1984,94 @@ void Initrobot() {
 }
 void updaterobot() {
 	if (robot.empty()) return;
-	for (int i = 0;i < robot.size();++i) {
-		glm::mat4 m = glm::mat4(1.0f);
 
+	glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), glm::radians(robot[2].angle), glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 modelMatBody = glm::translate(glm::mat4(1.0f), robot[2].t) * rotY;
 
+	robot[2].modelMat = modelMatBody * glm::scale(glm::mat4(1.0f), robot[2].s);
 
-		m = glm::translate(m, robot[2].t);
-		m = glm::rotate(m, glm::radians(robot[i].angle), glm::vec3(0.0f, 1.0f, 0.0f));
-		m = glm::translate(m, -robot[2].t);
-
-		m = glm::translate(m, robot[i].t);
-		m = glm::scale(m, robot[i].s);
-		robot[i].modelMat = m;
-	}
+	glm::vec3 localRightAxis = glm::vec3(1.0f, 0.0f, 0.0f);
 
 	static float walkPhase = 0.0f;
 	float maxLegAngle = glm::clamp(600.0f * speed, 10.0f, 90.0f);
 	float maxArmAngle = glm::clamp(400.0f * speed, 5.0f, 60.0f);
 
+	float legAngle = 0.0f;
+	float armAngle = 0.0f;
+
 	if (key_) {
 		walkPhase += speed * 120.0f;
 		if (walkPhase > 360.0f) walkPhase -= 360.0f;
 
-		float legAngle = maxLegAngle * sin(glm::radians(walkPhase));
-		float armAngle = maxArmAngle * sin(glm::radians(walkPhase + 180.0f));
-
-		glm::mat4 rotParent = glm::rotate(glm::mat4(1.0f), glm::radians(robot[2].angle), glm::vec3(0.0f, 1.0f, 0.0f));
-		glm::vec3 baseAxis = glm::vec3(1.0f, 0.0f, 0.0f);
-		float sign = (key_ == 2) ? -1.0f : 1.0f;
 		float amplitude = (key_ == 3 || key_ == 4) ? 0.6f : 1.0f;
-		legAngle *= amplitude * sign;
-		armAngle *= amplitude * sign;
+		float sign = (key_ == 2) ? -1.0f : 1.0f;
+		legAngle = maxLegAngle * sin(glm::radians(walkPhase)) * amplitude * sign;
+		armAngle = maxArmAngle * sin(glm::radians(walkPhase + 180.0f)) * amplitude * sign;
+	}
+	else {
+		walkPhase = 0.0f;
+	}
 
-		glm::vec3 legAxis = glm::normalize(glm::vec3(rotParent * glm::vec4(baseAxis, 0.0f)));
-		glm::vec3 armAxis = legAxis;
+	for (int i = 0; i < ROBOT; ++i) {
+		if (i == 2) continue;
+		glm::vec3 initial_local_offset = robot[i].t - robot[2].t;
+		glm::mat4 modelMat = modelMatBody;
+		modelMat = glm::translate(modelMat, initial_local_offset);
 
-		{
-			glm::mat4 mleg = glm::mat4(1.0f);
-			mleg = glm::translate(mleg, robot[2].t);
-			mleg *= rotParent;
-			mleg = glm::translate(mleg, robot[5].t - robot[2].t);
-			mleg = glm::rotate(mleg, glm::radians(legAngle), legAxis);
-			mleg = glm::scale(mleg, robot[5].s);
-			robot[5].modelMat = mleg;
+		if (i >= 3 && i <= 6) {
+			float currentAngle = 0.0f;
+
+			if (i == 3) currentAngle = armAngle;
+			else if (i == 4) currentAngle = -armAngle;
+			else if (i == 5) currentAngle = legAngle;
+			else if (i == 6) currentAngle = -legAngle;
+			modelMat = glm::translate(modelMat, -initial_local_offset);
+			modelMat = glm::rotate(modelMat, glm::radians(currentAngle), localRightAxis);
+			modelMat = glm::translate(modelMat, initial_local_offset);
 		}
+		modelMat = glm::scale(modelMat, robot[i].s);
 
-		{
-			glm::mat4 mleg = glm::mat4(1.0f);
-			mleg = glm::translate(mleg, robot[2].t);
-			mleg *= rotParent;
-			mleg = glm::translate(mleg, robot[6].t - robot[2].t);
-			mleg = glm::rotate(mleg, glm::radians(-legAngle), legAxis);
-			mleg = glm::scale(mleg, robot[6].s);
-			robot[6].modelMat = mleg;
-		}
-
-		{
-			glm::mat4 marm = glm::mat4(1.0f);
-			marm = glm::translate(marm, robot[2].t);
-			marm *= rotParent;
-			marm = glm::translate(marm, robot[3].t - robot[2].t);
-			marm = glm::rotate(marm, glm::radians(armAngle), armAxis);
-			marm = glm::scale(marm, robot[3].s);
-			robot[3].modelMat = marm;
-		}
-
-		{
-			glm::mat4 marm = glm::mat4(1.0f);
-			marm = glm::translate(marm, robot[2].t);
-			marm *= rotParent;
-			marm = glm::translate(marm, robot[4].t - robot[2].t);
-			marm = glm::rotate(marm, glm::radians(-armAngle), armAxis);
-			marm = glm::scale(marm, robot[4].s);
-			robot[4].modelMat = marm;
-		}
+		robot[i].modelMat = modelMat;
 	}
 }
+GLuint LoadTexture(const char* path)
+{
+	GLuint textureID;
+	glGenTextures(1, &textureID);
 
-//switch (key)
-//{
-//case GLUT_KEY_UP:
-//	for (int i = 0; i < robot.size(); ++i) {
-//		glm::vec3 v = { 0.0f,0.0f,view != 2 ? 0.1f : -0.1f };
-//		glm::mat4 m(1.0f);
-//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-//		v = glm::vec3(m * glm::vec4(v, 1.0f));
-//		robot[i].t += v;
-//
-//		if (view != 2) {
-//			robot[i].angle = camera_x_angle;
-//		}
-//	}
-//	key_ = 1;
-//	break;
-//case GLUT_KEY_DOWN:
-//	for (int i = 0; i < robot.size(); ++i) {
-//		glm::vec3 v = { 0.0f,0.0f,view != 2 ? -0.1f : 0.1f };
-//		glm::mat4 m(1.0f);
-//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-//		v = glm::vec3(m * glm::vec4(v, 1.0f));
-//		robot[i].t += v;
-//
-//		if (view != 2) {
-//			robot[i].angle = camera_x_angle + 180.0f;
-//		}
-//	}
-//	key_ = 2;
-//	break;
-//case GLUT_KEY_LEFT:
-//	for (int i = 0; i < robot.size(); ++i) {
-//		glm::vec3 v = { view != 2 ? 0.1f : -0.1f ,0.0f,0.0f };
-//		glm::mat4 m(1.0f);
-//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-//		v = glm::vec3(m * glm::vec4(v, 1.0f));
-//		robot[i].t += v;
-//
-//		if (view != 2) {
-//			robot[i].angle = camera_x_angle + 90.0f;
-//		}
-//	}
-//	key_ = 3;
-//	break;
-//case GLUT_KEY_RIGHT:
-//	for (int i = 0; i < robot.size(); ++i) {
-//		glm::vec3 v = { view != 2 ? -0.1f : 0.1f,0.0f,0.0f };
-//		glm::mat4 m(1.0f);
-//		m = glm::rotate(m, glm::radians(camera_x_angle), glm::vec3(0.0f, 1.0f, 0.0f));
-//		v = glm::vec3(m * glm::vec4(v, 1.0f));
-//		robot[i].t += v;
-//
-//		if (view != 2) {
-//			robot[i].angle = camera_x_angle - 90.0f;
-//		}
-//	}
-//	key_ = 4;
-//	break;
-//default:
-//	break;
-//}
+	int width, height, nrComponents;
+	unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+	if (data)
+	{
+		GLenum format;
+		if (nrComponents == 1)
+			format = GL_RED;
+		else if (nrComponents == 3)
+			format = GL_RGB;
+		else if (nrComponents == 4)
+			format = GL_RGBA;
+		else {
+			// 기본값으로 GL_RGB를 설정하거나 오류 처리
+			format = GL_RGB;
+		}
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (format == GL_RGBA) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (format == GL_RGBA) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		stbi_image_free(data);
+	}
+	else
+	{
+		std::cout << "Texture failed to load at path: " << path << std::endl;
+		stbi_image_free(data);
+		return 0;
+	}
+
+	return textureID;
+}

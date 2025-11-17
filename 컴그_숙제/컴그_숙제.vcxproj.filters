@@ -27,14 +27,44 @@
     <None Include="silverwolf.fbx">
       <Filter>헤더 파일</Filter>
     </None>
+    <None Include="vertex_text.glsl">
+      <Filter>헤더 파일</Filter>
+    </None>
+    <None Include="fragment_text.glsl">
+      <Filter>헤더 파일</Filter>
+    </None>
+    <None Include="fragment_image.glsl">
+      <Filter>헤더 파일</Filter>
+    </None>
+    <None Include="vertex_image.glsl">
+      <Filter>헤더 파일</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="숙제입니다.제가.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="text.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="image.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="resource.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dtd.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="text.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="image.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>
