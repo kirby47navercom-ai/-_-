@@ -654,7 +654,8 @@ void Update() {
 }
 int main(int argc, char** argv) {
 	model.push_back(read_obj_file("cube.obj"));
-	model.push_back(read_fbx_file("silverwolf.fbx"));
+	//model.push_back(read_fbx_file("silverwolf.fbx"));
+	model.push_back(read_fbx_file("은랑.fbx"));
 	srand(static_cast<unsigned>(time(0))); // 랜덤 시드 초기화
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH 추가
