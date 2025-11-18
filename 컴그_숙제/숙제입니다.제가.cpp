@@ -6,15 +6,15 @@
 #include<glm/glm.hpp>
 #include<glm/gtc/matrix_transform.hpp>
 #include <glm/ext.hpp>
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
+#include "Importer.hpp"
+#include "scene.h"
+#include "postprocess.h"
 #include "dtd.h" 
 #include <gl/glu.h>
 #include "Image.h" 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "fmod.hpp"
+#include "resource.h"
 #define ROBOT 7
 #define SIZE 800
 // 함수 선언
@@ -42,6 +42,7 @@ void updaterobot();
 void PassiveMotion(int x, int y);
 GLchar* filetobuf(const char* file);
 void SpecialUpKeyboard(int key, int x, int y);
+
 GLuint LoadTexture(const char* path);
 // 전역 변수
 GLint width = 1000, height = 1000;
@@ -51,6 +52,8 @@ GLuint uiShaderProgram;
 GLuint LoadTexture(const char* path);
 Image* uiImage = nullptr;
 Image* uiImage2 = nullptr;
+Image* uiImage3 = nullptr;
+Image* uiImage4[8];
 
 random_device rd;
 mt19937 gen(rd());
@@ -212,9 +215,11 @@ public:
 	}
 };
 
+Model read_fbx_file(const char* filename);
 
 vector<Block>block;
 vector<Shape>robot;
+Shape* silverwolf_shape = nullptr;
 
 class RobotBounds {
 public:
@@ -451,6 +456,20 @@ int key_ = 0;
 //텍스트 ㄱㄱ
 Text textUI;
 
+//f를 눌러 광명찾자
+bool f = false;
+
+//h를 눌러 광명찾자
+bool h = false;
+int frame_num = 0;
+
+
+//빛의 회전률을 넣어서 코딩을 지배하자
+float light_angle = 0.0f;
+
+//빛빛빛빛빛빛 으악
+float ambientLight = 0.1;
+
 bool game_start = false;
 bool is_input_mode = true;
 int input_width = 0;
@@ -458,6 +477,17 @@ int input_height = 0;
 bool is_input_width = true; 
 std::string input_buffer = ""; 
 Text input_text_ui;
+
+//타임의 시작과 끝
+chrono::time_point<chrono::high_resolution_clock> time_start;
+chrono::time_point<chrono::high_resolution_clock> time_end;
+bool time_check = false;
+chrono::seconds d_s(100);
+chrono::time_point<chrono::high_resolution_clock> duration;
+float final_time = 0.0f;
+
+//프레임 속도
+int frame_speed = 20;
 
 
 
@@ -468,7 +498,18 @@ GLfloat tranformx(int x) {
 GLfloat tranformy(int y) {
 	return ((height - (float)y) / (height / 2)) - 1.0f;
 }
+void InitSilverwolf() {
+	if (model.size() > 1) {
 
+		silverwolf_shape = new Shape(model[1], 99);
+
+
+		silverwolf_shape->s = glm::vec3(0.05f, 0.05f, 0.05f);
+
+
+		silverwolf_shape->t = glm::vec3(0.0f, 0.5f, -10.0f);
+	}
+}
 void Init_text()
 {
 	GLuint fontShader = LoadShader("vertex_text.glsl", "fragment_text.glsl");
@@ -490,13 +531,28 @@ void Init_Image()
 		glm::vec2 size1 = glm::vec2((float)width, (float)height);
 		glm::vec2 pos1 = glm::vec2((float)width / 2.0f, (float)height / 2.0f);
 		uiImage = new Image(imageTextureID, pos1, size1);
-
+		uiImage->color.w = 1.0f;
 		
-		//GLuint imageTextureID2 = LoadTexture("test_image_icon.png"); 
-		//glm::vec2 pos2 = glm::vec2(100.0f, 100.0f);
-		//glm::vec2 size2 = glm::vec2(100.0f, 100.0f);
-		//uiImage2 = new Image(imageTextureID2, pos2, size2);
-		//uiImage2->color = glm::vec4(1.0f, 0.5f, 0.5f, 1.0f); // 붉은 틴트 적용
+		GLuint imageTextureID2 = LoadTexture("f_press.png"); 
+		glm::vec2 pos2 = glm::vec2(600.0f, 50.0f);
+		glm::vec2 size2 = glm::vec2(825.0f/2.0f, 216.0f / 2.0f);
+		uiImage2 = new Image(imageTextureID2, pos2, size2);
+
+		GLuint imageTextureID3 = LoadTexture("read.png");
+		glm::vec2 size3 = glm::vec2(800.0f, (float)height);
+		glm::vec2 pos3 = glm::vec2(600.0f, -500);
+		uiImage3 = new Image(imageTextureID3, pos3, size3);
+		uiImage3->color.w = 0.5f;
+
+		for (int i = 0;i < 8;++i) {
+			string path = "gif/frame_000" + to_string(i+1) + ".png";
+			GLuint imageTextureID4 = LoadTexture(path.c_str());
+			glm::vec2 size4 = glm::vec2((float)width, (float)height);
+			glm::vec2 pos4 = glm::vec2((float)width / 2.0f+100.0f, (float)height / 2.0f);
+			uiImage4[i] = new Image(imageTextureID4, pos4, size4);
+		}
+
+		//uiImage3
 	}
 }
 //커비 zjql
@@ -522,10 +578,10 @@ void InitData() {
 
 	game_start = true;
 	block_start = block_width * block_height;
-	system("chcp 65001");
+	//system("chcp 65001");
 	fstream f{ "commend.txt" };
 	string s;
-	while (getline(f, s))cout << s << endl;
+	//while (getline(f, s))cout << s << endl;
 
 
 	block.clear();
@@ -581,13 +637,24 @@ void Update() {
 			}
 		}
 	}
+	if (silverwolf_shape) {
+		for (size_t j = 0; j < silverwolf_shape->vertexData.size() / 3; ++j) {
+			combinateData.push_back(silverwolf_shape->vertexData[j * 3 + 0]);
+			combinateData.push_back(silverwolf_shape->vertexData[j * 3 + 1]);
+			combinateData.push_back(silverwolf_shape->vertexData[j * 3 + 2]);
+			combinateData.push_back(silverwolf_shape->normalData[j * 3 + 0]);
+			combinateData.push_back(silverwolf_shape->normalData[j * 3 + 1]);
+			combinateData.push_back(silverwolf_shape->normalData[j * 3 + 2]);
+		}
+	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, combinateData.size() * sizeof(GLfloat), combinateData.data(), GL_DYNAMIC_DRAW);
+	
 }
 int main(int argc, char** argv) {
 	model.push_back(read_obj_file("cube.obj"));
-
+	model.push_back(read_fbx_file("silverwolf.fbx"));
 	srand(static_cast<unsigned>(time(0))); // 랜덤 시드 초기화
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH 추가
@@ -612,11 +679,15 @@ int main(int argc, char** argv) {
 		std::cerr << "셰이더 프로그램 생성 실패" << std::endl;
 		return -1;
 	}
-	
 
+	Sound_Create();
+	_system->playSound(start_bgm, 0, false, &bgmChannel);
+
+	glutSetCursor(GLUT_CURSOR_NONE);
 	Init_Image();
 	InitBuffers();
 	Init_text();
+	InitSilverwolf();
 	glutTimerFunc(10, TimerFunction, 1);
 	glutDisplayFunc(DrawScene);
 	glutReshapeFunc(Reshape);
@@ -674,103 +745,120 @@ void DrawScene() {
 
 
 		glViewport(0, 0, width, height);
-		{
-			// Camera (View) 및 Projection 매트릭스 설정
-			glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f)); // 뷰 매트릭스
-			glm::mat4 proj;
+	{
+		glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 proj;
 
-			if (op) {
-				float aspect = (float)width / (float)height;
-				float size = 5.0f;
-				proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
-			}
-			else {
-				proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
-			}
+		if (op) {
+			float aspect = (float)width / (float)height;
+			float size = 5.0f;
+			proj = glm::ortho(-size * aspect, size * aspect, -size, size, 0.1f, 100.0f);
+		}
+		else {
+			proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+		}
 
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 
-			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-			glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+		GLuint offset = 0;
+		size_t vertices_per_block = model[0].face_count * 3;
 
-			GLuint offset = 0;
-			for (int i = 0; i < block.size(); ++i) {
-				for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
-					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
-					glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
-					glDrawArrays(GL_TRIANGLES, offset, 3);
-					offset += 3;
+		// 1. 미로 블록 렌더링 (블록당 1회 드로우 콜)
+		for (int i = 0; i < block.size(); ++i) {
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+			glUniform3f(faceColorLoc, block[i].colors.x, block[i].colors.y, block[i].colors.z);
+			glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
+			offset += vertices_per_block;
+		}
 
-				}
-			}
-			if (!robot.empty()) {
-				for (int i = 0; i < robot.size(); ++i) {
-					for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
-						glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
-						glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
-						glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
-						glDrawArrays(GL_TRIANGLES, offset, 3);
-						offset += 3;
-					}
-				}
+		// 2. 로봇 렌더링 (부품당 1회 드로우 콜)
+		if (!robot.empty()) {
+			for (int i = 0; i < robot.size(); ++i) {
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
+				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+				glUniform3f(faceColorLoc, robot[i].colors.x, robot[i].colors.y, robot[i].colors.z);
+				glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
+				offset += vertices_per_block;
 			}
 		}
-		glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
-		{
-			float maxrange = max(block_width, block_height) / 2.0f + 2.0f;
 
+		if (silverwolf_shape) {
+			size_t vertices_silverwolf = model[1].face_count * 3;
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(silverwolf_shape->modelMat));
+			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(silverwolf_shape->modelMat)))));
+			glUniform3f(faceColorLoc, silverwolf_shape->colors.x, silverwolf_shape->colors.y, silverwolf_shape->colors.z);
+			glDrawArrays(GL_TRIANGLES, offset, vertices_silverwolf);
 
-			glm::mat4 view = glm::lookAt(
-				glm::vec3(0.0f, 30.0f, 0.0f),
-				glm::vec3(0.0f, 0.0f, 0.0f),
-				glm::vec3(0.0f, 0.0f, -1.0f)
-			);
+			offset += vertices_silverwolf;
+		}
+	}
+    // 3. 미니맵 렌더링 (동일 로직 적용)
+	glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
+	{
+		float maxrange = max(block_width, block_height) / 2.0f + 2.0f;
+		glm::mat4 view = glm::lookAt(
+			glm::vec3(0.0f, 30.0f, 0.0f),
+			glm::vec3(0.0f, 0.0f, 0.0f),
+			glm::vec3(0.0f, 0.0f, -1.0f)
+		);
+		glm::mat4 proj = glm::ortho(-maxrange, maxrange, -maxrange, maxrange, 0.1f, 50.0f);
 
-			// 직교 투영을 블록 범위에 맞게 조정
-			glm::mat4 proj = glm::ortho(-maxrange, maxrange, -maxrange, maxrange, 0.1f, 50.0f);
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 
-			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-			glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+		GLuint offset = 0;
+		size_t vertices_per_block = model[0].face_count * 3;
 
-			GLuint offset = 0;
-			for (int i = 0; i < block.size(); ++i) {
-				for (int j = 0; j < block[i].vertexData.size() / 9; ++j) {
-					glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-					glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
-					glUniform3f(faceColorLoc, block[i].colors[0], block[i].colors[1], block[i].colors[2]);
-					glDrawArrays(GL_TRIANGLES, offset, 3);
-					offset += 3;
-				}
+		for (int i = 0; i < block.size(); ++i) {
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
+			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+			glUniform3f(faceColorLoc, block[i].colors.x, block[i].colors.y, block[i].colors.z);
+			glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
+			offset += vertices_per_block;
+		}
 
-			}
-			if (!robot.empty()) {
-				for (int i = 0; i < robot.size(); ++i) {
-					for (int j = 0; j < robot[i].vertexData.size() / 9; ++j) {
-						glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
-						glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
-						glUniform3f(faceColorLoc, robot[i].colors[0], robot[i].colors[1], robot[i].colors[2]);
-						glDrawArrays(GL_TRIANGLES, offset, 3);
-						offset += 3;
-					}
-				}
+		if (!robot.empty()) {
+			for (int i = 0; i < robot.size(); ++i) {
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
+				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+				glUniform3f(faceColorLoc, robot[i].colors.x, robot[i].colors.y, robot[i].colors.z);
+				glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
+				offset += vertices_per_block;
 			}
 		}
+
+		if (silverwolf_shape) {
+			size_t vertices_silverwolf = model[1].face_count * 3; 
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(silverwolf_shape->modelMat));
+			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(silverwolf_shape->modelMat)))));
+			glUniform3f(faceColorLoc, silverwolf_shape->colors.x, silverwolf_shape->colors.y, silverwolf_shape->colors.z);
+			glDrawArrays(GL_TRIANGLES, offset, vertices_silverwolf);
+
+			offset += vertices_silverwolf; 
+		}
+	}
 
 
 
 		GLint lightPosLocation = glGetUniformLocation(shaderProgramID, "lightPos"); //--- lightPos 값 전달: (0.0, 0.0, 5.0);
 		GLint lightColorLocation = glGetUniformLocation(shaderProgramID, "lightColor"); //--- lightColor 값 전달: (1.0, 1.0, 1.0) 백색
 		GLint viewPosLocation = glGetUniformLocation(shaderProgramID, "viewPos"); //--- viewPos 값 전달: 카메라 위치
+		GLint ambientLightLocation = glGetUniformLocation(shaderProgramID, "ambientLight");
 
 
 
 
-		glm::vec3 lightPos = { 0.0f,200.0f,0.0f };
+		glm::vec3 lightPos = { 0.0f,20.0f,0.0f };
 		//glm::mat4 lightModelMat = shape.back().modelMat;
 		//lightPos = glm::vec3(lightModelMat * glm::vec4(lightPos, 1.0f));
+		glm::mat4 lightRotation = glm::rotate(glm::mat4(1.0f), glm::radians(light_angle), glm::vec3(1.0f, 0.0f, 0.0f));
+		lightPos = glm::vec3(lightRotation * glm::vec4(lightPos, 1.0f));
 
-
-		glUniform3f(lightPosLocation, 0, 20, 0);
+		//cout<<light_angle<<" " << lightPos.x << ' ' << lightPos.y << ' ' << lightPos.z << endl;
+		glUniform3f(lightPosLocation,lightPos.x, lightPos.y, lightPos.z);
+		glUniform1f(ambientLightLocation, ambientLight);
 
 
 		glUniform3f(lightColorLocation, light_color.x, light_color.y, light_color.z);
@@ -786,7 +874,8 @@ void DrawScene() {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_DEPTH_TEST);
-	textUI.Draw("asd", 50, 300, 1.0f, glm::vec3(1, 1, 1));
+
+	//textUI.Draw("F_Press", 50, 300, 1.0f, glm::vec3(1, 1, 1));
 
 
 
@@ -829,6 +918,36 @@ void DrawScene() {
 	for (const char* c = statusText; *c != '\0'; c++) {
 		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
 	}
+	glRasterPos2i(0, height - 60);
+	sprintf(statusText, "best time: %.3f", final_time);
+	for (const char* c = statusText; *c != '\0'; c++) {
+		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+	}
+	if (time_check) {
+		glRasterPos2i(0, height - 80);
+		sprintf(statusText, "current time: %.3f", chrono::duration<float>(chrono::high_resolution_clock::now() - time_start).count());
+		for (const char* c = statusText; *c != '\0'; c++) {
+			glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+		}
+	}
+
+
+	glm::mat4 uiProj = glm::ortho(200.0f, (float)width, 0.0f, (float)height);
+	uiImage2->Draw(uiShaderProgram, uiProj);
+	uiImage3->Draw(uiShaderProgram, uiProj);
+
+	if (h) {
+		static int t = 0;
+		++t;
+		if (t % frame_speed == 0) {
+			frame_num = (frame_num + 1) % 8;
+			t = 0;
+		}
+		uiImage4[frame_num]->Draw(uiShaderProgram, uiProj);
+	}
+
+
+
 	glPopMatrix();
 	glMatrixMode(GL_PROJECTION);
 	glPopMatrix();
@@ -836,45 +955,44 @@ void DrawScene() {
 
 	glEnable(GL_DEPTH_TEST);
 	}
-	else {
-
-		glEnable(GL_DEPTH_TEST);
-		glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+	
+	if (uiImage->color.w > 0.0f) {
+	
 		// ... (glEnable(GL_CULL_FACE) 등)
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+
+		glDisable(GL_DEPTH_TEST); // UI가 항상 맨 위에
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glDisable(GL_CULL_FACE);
+
 
 		if (uiImage && uiShaderProgram != 0) {
 			glm::mat4 uiProj = glm::ortho(0.0f, (float)width, 0.0f, (float)height);
 			uiImage->Draw(uiShaderProgram, uiProj);
 		}
 
-		glDisable(GL_DEPTH_TEST);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-		glm::mat4 uiProj = glm::ortho(0.0f, (float)width, 0.0f, (float)height);
 
-		std::string prompt;
-		if (is_input_width) {
-			prompt = "WIDTH: ";
+		if (!game_start) {
+
+			std::string prompt;
+			if (is_input_width) {
+				prompt = "WIDTH: ";
+			}
+			else {
+				prompt = "HEIGHT: ";
+			}
+			prompt += input_buffer;
+
+			// 텍스트 출력 (현재 입력 버퍼 내용 표시)
+			textUI.Draw(prompt, width / 2.0f - 200.0f, 200, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
 		}
-		else {
-			prompt = "HEIGHT: ";
-		}
-		prompt += input_buffer;
-
-		// 텍스트 출력 (현재 입력 버퍼 내용 표시)
-		textUI.Draw(prompt, width / 2.0f - 200.0f, 200, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
 
 		// 렌더링 후 상태 복구
+		glUseProgram(0);
 		glDisable(GL_BLEND);
-		glEnable(GL_DEPTH_TEST);
-
-		glPopMatrix();
-		glMatrixMode(GL_PROJECTION);
-		glPopMatrix();
-		glMatrixMode(GL_MODELVIEW);
-
 		glEnable(GL_DEPTH_TEST);
 	}
 
@@ -1143,9 +1261,12 @@ void Keyboard(unsigned char key, int x, int y)
 
 		else if (key == 13) {
 			if (!input_buffer.empty()) {
+				int value;
 
-
-				int value = std::stoi(input_buffer);
+				if(input_buffer.size()>2)
+					value = 100;
+				else
+				value = std::stoi(input_buffer);
 
 
 				if (value >= 5 && value <= 25) {
@@ -1157,6 +1278,8 @@ void Keyboard(unsigned char key, int x, int y)
 						block_height = value;
 						is_input_mode = false;  
 						InitData();
+						bgmChannel->stop();
+						_system->playSound(main_bgm, 0, false, &bgmChannel);
 					}
 				}
 				else {
@@ -1226,6 +1349,10 @@ void Keyboard(unsigned char key, int x, int y)
 		if (!recall&& maze) {
 			recall = true;
 			Initrobot();
+			bgmChannel->stop();
+			_system->playSound(run_bgm, 0, false, &bgmChannel);
+			time_check = false;
+
 		}
 	break;
 	case '+':
@@ -1274,15 +1401,23 @@ void Keyboard(unsigned char key, int x, int y)
 	input_height = 0;
 	is_input_width = true;
 	input_buffer = "";
+	uiImage->color.w = 1.0f;
+	light_angle = 0.0f;
+	bgmChannel->stop();
+	_system->playSound(start_bgm, 0, false, &bgmChannel);
+	duration = chrono::high_resolution_clock::time_point() + d_s;
+	for (int i = 0;i < 8;++i)
+		uiImage4[i]->color=glm::vec4(1.0f);
+	frame_speed = 20;
 	break;
 	case 'q':
 	exit(0);
 	break;
-
-
-
 	//추가구현들 
 	//카메라 묶기 햇죠ㅕ용
+	case 'f':
+		f = true;
+		break;
 	case '[':
 	{
 		static bool b = false;
@@ -1302,6 +1437,20 @@ void Keyboard(unsigned char key, int x, int y)
 		light_color = glm::vec3(r_color(gen), r_color(gen), r_color(gen));
 	}
 	break;
+	case 'j':
+		light_angle += 5.0f;
+		break;
+	case 'J':
+		light_angle -= 5.0f;
+		break;
+	case 'k':
+		ambientLight += 0.05f;
+		if (ambientLight > 1.0f) ambientLight = 1.0f;
+		break;
+	case 'K':
+		ambientLight -= 0.05f;
+		if (ambientLight < 0.0f) ambientLight = 0.0f;
+		break;
 	case '8':
 		if (view == 0) {
 			glm::vec3 v = { 0.0f,0.0f,-0.2 };
@@ -1354,7 +1503,7 @@ void Keyboard(unsigned char key, int x, int y)
 			view = 2;
 			camera_x_angle = robot[2].angle;
 			camera_move=glm::vec3(0.0f);
-			cameraPos = glm::vec3(-10.0f, max(float(block_width), float(block_height))+40.0f, -10.0f);
+			cameraPos = glm::vec3(-10.0f, max(float(block_width), float(block_height))+40.0f, 10.0f);
 
 		}
 		break;
@@ -1364,9 +1513,57 @@ void Keyboard(unsigned char key, int x, int y)
 		break;
 	case 'g':
 		g = true;
+		glutSetCursor(GLUT_CURSOR_INHERIT);
 		break;
-
+	case 'x':
+		sound_v += 0.01f;
+		if (sound_v > 0.4f) sound_v = 0.4f;
+		break;
+	case 'X':
+		sound_v -= 0.01f;
+		if (sound_v < 0.0f) sound_v = 0.0f;
+		break;
+	case 'd':
+		effect_v += 0.01f;
+		if (effect_v > 0.4f) effect_v = 0.4f;
+		break;
+	case 'D':
+		effect_v -= 0.01f;
+		if (effect_v < 0.0f) effect_v = 0.0f;
+		break;
+	case 'h':
+		h = true;
+		break;
+	case '<':
+		for (int i = 0;i < 8;++i) {
+			uiImage4[i]->color.w -= 0.1f;
+			if (uiImage4[i]->color.w < 0.0f) uiImage4[i]->color.w = 0.0f;
+		}
+		break;
+	case '>':
+		for (int i = 0;i < 8;++i) {
+			uiImage4[i]->color.w += 0.1f;
+			if (uiImage4[i]->color.w > 1.0f) uiImage4[i]->color.w = 1.0f;
+		}
+		break;
+	case '/':
+	{
+		float a = r_color(gen), b = r_color(gen), c = r_color(gen);
+		for (int i = 0;i < 8;++i) {
+			uiImage4[i]->color = glm::vec4(a, b, c, uiImage4[i]->color.w);
+		}
 	}
+	break;
+	case ',':
+		frame_speed -= 2;
+		if (frame_speed < 2) frame_speed = 2;
+		break;
+	case '.':
+		frame_speed += 2;
+		if (frame_speed > 60) frame_speed = 60;
+		break;
+	}
+
 
 	glutPostRedisplay();
 }
@@ -1380,9 +1577,11 @@ void SpecialKeyboard(int key, int x, int y)
 			for (int i = 0; i < robot.size(); ++i) {
 				old_robot_t[i] = robot[i].t;
 			}
-
 			glm::vec3 robotHalf = robotbb.halfExtents;
-
+			bool isPlaying = false;
+			if (effectChannel) { // 채널이 유효한지 확인
+				effectChannel->isPlaying(&isPlaying);
+			}
 			switch (key)
 			{
 			case GLUT_KEY_UP:
@@ -1396,6 +1595,9 @@ void SpecialKeyboard(int key, int x, int y)
 					if (view != 2) {
 						robot[i].angle = camera_x_angle;
 					}
+				}
+				if (!isPlaying) {
+					_system->playSound(walk_effect, 0, false, &effectChannel);
 				}
 				key_ = 1;
 				break;
@@ -1411,6 +1613,10 @@ void SpecialKeyboard(int key, int x, int y)
 						robot[i].angle = camera_x_angle + 180.0f;
 					}
 				}
+
+				if (!isPlaying) {
+					_system->playSound(walk_effect, 0, false, &effectChannel);
+				}
 				key_ = 2;
 				break;
 			case GLUT_KEY_LEFT:
@@ -1424,6 +1630,9 @@ void SpecialKeyboard(int key, int x, int y)
 					if (view != 2) {
 						robot[i].angle = camera_x_angle + 90.0f;
 					}
+				}
+				if (!isPlaying) {
+					_system->playSound(walk_effect, 0, false, &effectChannel);
 				}
 				key_ = 3;
 				break;
@@ -1439,18 +1648,26 @@ void SpecialKeyboard(int key, int x, int y)
 						robot[i].angle = camera_x_angle - 90.0f;
 					}
 				}
+				if (!isPlaying) {
+					_system->playSound(walk_effect, 0, false, &effectChannel);
+				}
 				key_ = 4;
 				break;
 			default:
 				break;
 			}
 
+
 			glm::vec3 newRobotCenter = robot[2].t;
 			bool collided = false;
 			for (auto& wall : block) {
 				if (CheckCollision(newRobotCenter, robotHalf, wall)) {
 					if (wall.start) {
+						if (!time_check) {
+							time_start = std::chrono::high_resolution_clock::now();
+							time_check = true;
 
+						}
 					}
 					else if (wall.end) {
 
@@ -1461,6 +1678,15 @@ void SpecialKeyboard(int key, int x, int y)
 						camera_move = glm::vec3(0.0f, 0.0f, 0.0f);
 						camera_x_angle = 0.0f;
 						camera_y_angle = 0.0f;
+						bgmChannel->stop();
+						time_end = std::chrono::high_resolution_clock::now();
+						auto elapsed_duration = time_end - time_start;
+						if(final_time <=0.1f|| final_time>= std::chrono::duration_cast<std::chrono::duration<float>>(elapsed_duration).count())
+							final_time = std::chrono::duration_cast<std::chrono::duration<float>>(elapsed_duration).count();
+						time_check = false;
+						_system->playSound(winner_bgm, 0, false, &effectChannel);
+						_system->playSound(main_bgm, 0, false, &bgmChannel);
+
 						break;
 					}
 					else if (wall.line) {
@@ -1496,6 +1722,14 @@ void Keyupboard(unsigned char key, int x, int y) {
 			break;
 		case 'g':
 			g = false;
+			glutSetCursor(GLUT_CURSOR_NONE);
+			break;
+		case 'f':
+			f = false;
+			break;
+		case 'h':
+			h = false;
+			frame_num = 0;
 			break;
 		}
 	}
@@ -1527,7 +1761,7 @@ void Start_Wait() {
 }
 void U_D_animation() {
 	for (int i = 0;i < block.size();++i) {
-		if (!block[i].line) {
+		if (!(block[i].line || block[i].start || block[i].end)) {
 			int a = (r_m(gen) == 0 ? 1 : -1);
 			if (block[i].t.y < 3.0f)a = 1;
 			block[i].s.y += block[i].speed * 0.5f * a;
@@ -1540,7 +1774,7 @@ void U_D_animation() {
 }
 void D_animation() {
 	for (int i = 0;i < block.size();++i) {
-		if (block[i].t.y > 1.0f&& !block[i].line) {
+		if (block[i].t.y > 1.0f&& !(block[i].line|| block[i].start|| block[i].end)) {
 			block[i].s.y -= block[i].speed * 0.1f;
 			block[i].t.y -= block[i].speed * 0.05f;
 		}
@@ -1566,6 +1800,23 @@ void camera_move_update() {
 void TimerFunction(int value)
 {
 	if (game_start) {
+		if(uiImage->color.w>0.0)
+			uiImage->color.w -= 0.01f;
+
+		if (f && uiImage2->position.y < height + 50.0f) {
+			uiImage2->position.y += 10.0f;
+			uiImage3->position.y += 10.0f;
+		}
+		if (!f && uiImage2->position.y > 50.0f) {
+			uiImage2->position.y -= 10.0f;
+			uiImage3->position.y -= 10.0f;
+		}
+
+
+
+
+
+
 		camera_move -= glm::vec3(ad_ * 0.5f, ws_ * 0.5f, pn_ * 0.5f);
 
 		for (int i = 0;i < block.size();++i) {
@@ -1595,6 +1846,8 @@ void TimerFunction(int value)
 			else if (m)U_D_animation();
 		}
 	}
+	UpdateSound();
+	UpdateShake();
 	glutTimerFunc(10, TimerFunction, 1);
 	glutPostRedisplay();
 }
@@ -1749,22 +2002,19 @@ GLuint MakeShaderProgram() {
 }
 
 void InitBuffers() {
-	glGenVertexArrays(1, &VAO);
 
+
+	glGenVertexArrays(1, &VAO);
 	glBindVertexArray(VAO);
 
 	glGenBuffers(1, &VBO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
 
-
-
-
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void*)0);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float))); //--- 노말 속성
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
 	glEnableVertexAttribArray(1);
-
 
 	glBindVertexArray(0);
 }
@@ -2043,24 +2293,37 @@ GLuint LoadTexture(const char* path)
 	unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
 	if (data)
 	{
-		GLenum format;
-		if (nrComponents == 1)
-			format = GL_RED;
-		else if (nrComponents == 3)
-			format = GL_RGB;
-		else if (nrComponents == 4)
-			format = GL_RGBA;
+		GLenum internalFormat;
+		GLenum dataFormat;
+
+		if (nrComponents == 4) {
+			internalFormat = GL_RGBA;
+			dataFormat = GL_RGBA;
+		}
+		else if (nrComponents == 3) {
+			internalFormat = GL_RGB;
+			dataFormat = GL_RGB;
+		}
+		else if (nrComponents == 1) {
+			internalFormat = GL_RED;
+			dataFormat = GL_RED;
+		}
 		else {
-			// 기본값으로 GL_RGB를 설정하거나 오류 처리
-			format = GL_RGB;
+			internalFormat = GL_RGB;
+			dataFormat = GL_RGB;
 		}
 
 		glBindTexture(GL_TEXTURE_2D, textureID);
-		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, dataFormat, GL_UNSIGNED_BYTE, data);
 		glGenerateMipmap(GL_TEXTURE_2D);
 
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (format == GL_RGBA) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (format == GL_RGBA) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+		if (nrComponents == 1) {
+			GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+			glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+		}
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -2074,4 +2337,68 @@ GLuint LoadTexture(const char* path)
 	}
 
 	return textureID;
+}
+Model read_fbx_file(const char* filename) {
+	Assimp::Importer importer;
+	Model model{};
+
+	// Assimp 로딩 플래그: 모든 것을 삼각형화하고, 정점 병합 및 노멀 생성
+	const aiScene* scene = importer.ReadFile(filename,
+		aiProcess_Triangulate |
+		aiProcess_JoinIdenticalVertices |
+		aiProcess_GenNormals);
+
+	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode || scene->mNumMeshes == 0) {
+		std::cerr << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
+		return model; // 실패 시 빈 모델 반환
+	}
+
+	// 첫 번째 Mesh만 사용합니다.
+	aiMesh* mesh = scene->mMeshes[0];
+
+	// 1. Vertex (정점) 데이터 변환
+	model.vertex_count = mesh->mNumVertices;
+	model.vertices = (Vertex*)malloc(model.vertex_count * sizeof(Vertex));
+
+	for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+		model.vertices[i].x = mesh->mVertices[i].x;
+		model.vertices[i].y = mesh->mVertices[i].y;
+		model.vertices[i].z = mesh->mVertices[i].z;
+	}
+
+	// 2. Face (면) 데이터 변환 (삼각형화되었으므로 면 하나당 3개의 정점 인덱스)
+	model.face_count = mesh->mNumFaces;
+	model.faces = (Face*)malloc(model.face_count * sizeof(Face));
+
+	for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
+		aiFace face = mesh->mFaces[i];
+		if (face.mNumIndices == 3) { // Triangulate 플래그로 인해 3개여야 함
+			model.faces[i].v1 = face.mIndices[0];
+			model.faces[i].v2 = face.mIndices[1];
+			model.faces[i].v3 = face.mIndices[2];
+		}
+		else {
+			// 3개가 아닌 면은 무시 (예외 처리)
+		}
+	}
+
+	// 3. Normal (노멀) 데이터 변환 (OBJ 파서와 동일하게 Face-Vertex 순서로 저장)
+	model.normals.reserve(model.face_count * 3);
+	if (mesh->HasNormals()) {
+		for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
+			aiFace face = mesh->mFaces[i];
+
+			// 각 면의 세 정점에 대한 노멀을 모델의 normals 벡터에 순차적으로 추가합니다.
+			for (unsigned int j = 0; j < 3; ++j) {
+				unsigned int vertexIndex = face.mIndices[j];
+				model.normals.push_back({
+					mesh->mNormals[vertexIndex].x,
+					mesh->mNormals[vertexIndex].y,
+					mesh->mNormals[vertexIndex].z
+					});
+			}
+		}
+	}
+
+	return model;
 }

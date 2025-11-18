@@ -9,10 +9,10 @@ uniform vec3 faceColor; //--- 면 색상
 uniform vec3 lightPos; //--- 조명의 위치
 uniform vec3 lightColor; //--- 조명의 색
 uniform vec3 viewPos; //--- 카메라 위치
+uniform float ambientLight;
 
 void main ()
 {
-	float ambientLight = 0.1; //--- 주변 조명 세기
 	vec3 ambient = ambientLight * lightColor; //--- 주변 조명 값
 	
 	vec3 normalVector = normalize(Normal);
