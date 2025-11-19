@@ -746,8 +746,9 @@ void DrawScene() {
 
 
 		glViewport(0, 0, width, height);
-	{
-		glm::mat4 view = glm::lookAt(cameraPos, camera_move, glm::vec3(0.0f, 1.0f, 0.0f));
+	{	
+		glm::vec3 con = cameraPos - dtd::v;
+		glm::mat4 view = glm::lookAt(con, camera_move, glm::vec3(0.0f, 1.0f, 0.0f));
 		glm::mat4 proj;
 
 		if (op) {
@@ -1687,6 +1688,7 @@ void SpecialKeyboard(int key, int x, int y)
 						time_check = false;
 						_system->playSound(winner_bgm, 0, false, &effectChannel);
 						_system->playSound(main_bgm, 0, false, &bgmChannel);
+						StartShake(2000, 5);//쉐이크
 
 						break;
 					}
@@ -2068,7 +2070,7 @@ void GenerateMaze() {
 		}
 
 		if (!neighbors.empty()) {
-			// 이웃 중 하나를 무작위로 선택
+			// 이웃 중 하나를 무작위로 선택S
 			uniform_int_distribution<int> r_neighbor(0, neighbors.size() - 1);
 			auto [nx, nz] = neighbors[r_neighbor(gen)];
 
