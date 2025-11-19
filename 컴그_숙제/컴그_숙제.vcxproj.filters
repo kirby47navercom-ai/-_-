@@ -39,6 +39,12 @@
     <None Include="vertex_image.glsl">
       <Filter>헤더 파일</Filter>
     </None>
+    <None Include="vertex_fbx.glsl">
+      <Filter>헤더 파일</Filter>
+    </None>
+    <None Include="fragment_fbx.glsl">
+      <Filter>헤더 파일</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="숙제입니다.제가.cpp">
@@ -65,6 +71,9 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Model.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>

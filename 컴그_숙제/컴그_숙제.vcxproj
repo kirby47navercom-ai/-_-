@@ -150,11 +150,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="fragment.glsl" />
+    <None Include="fragment_fbx.glsl" />
     <None Include="fragment_image.glsl" />
     <None Include="fragment_text.glsl" />
     <None Include="Idle.fbx" />
     <None Include="silverwolf.fbx" />
     <None Include="vertex.glsl" />
+    <None Include="vertex_fbx.glsl" />
     <None Include="vertex_image.glsl" />
     <None Include="vertex_text.glsl" />
   </ItemGroup>
@@ -167,6 +169,7 @@
   <ItemGroup>
     <ClInclude Include="dtd.h" />
     <ClInclude Include="image.h" />
+    <ClInclude Include="Model.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="text.h" />
   </ItemGroup>

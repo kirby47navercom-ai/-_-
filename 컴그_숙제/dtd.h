@@ -22,6 +22,7 @@
 #include "fmod.hpp"
 #include <thread>
 #include <chrono>
+#include <cctype>
 using namespace std;
 
 

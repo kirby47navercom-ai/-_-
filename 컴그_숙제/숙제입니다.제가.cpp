@@ -6,12 +6,13 @@
 #include<glm/glm.hpp>
 #include<glm/gtc/matrix_transform.hpp>
 #include <glm/ext.hpp>
+#include <gl/glu.h>
 #include "Importer.hpp"
 #include "scene.h"
 #include "postprocess.h"
 #include "dtd.h" 
-#include <gl/glu.h>
 #include "Image.h" 
+#include "Model.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "resource.h"
@@ -42,6 +43,7 @@ void updaterobot();
 void PassiveMotion(int x, int y);
 GLchar* filetobuf(const char* file);
 void SpecialUpKeyboard(int key, int x, int y);
+GLuint MakeFbxShaderProgram();
 
 GLuint LoadTexture(const char* path);
 // 전역 변수
@@ -219,7 +221,10 @@ Model read_fbx_file(const char* filename);
 
 vector<Block>block;
 vector<Shape>robot;
-Shape* silverwolf_shape = nullptr;
+
+//은랑입니다 네
+GLuint fbxShaderProgramID; // [추가] FBX 전용 셰이더 프로그램 ID
+NewModel* silverWolfModel[2]; // [변경] Shape* 대신 NewModel* 사용
 
 class RobotBounds {
 public:
@@ -470,6 +475,9 @@ float light_angle = 0.0f;
 //빛빛빛빛빛빛 으악
 float ambientLight = 0.1;
 
+//로봇 은랑 스위칭
+float sss = false;
+
 bool game_start = false;
 bool is_input_mode = true;
 int input_width = 0;
@@ -499,16 +507,16 @@ GLfloat tranformy(int y) {
 	return ((height - (float)y) / (height / 2)) - 1.0f;
 }
 void InitSilverwolf() {
-	if (model.size() > 1) {
+	silverWolfModel[0] = new NewModel("Idle.fbx");
+	//silverWolfModel = new NewModel("silverwolf.fbx");
+	// 초기 위치 및 크기 설정
+	silverWolfModel[0]->pos = glm::vec3(0.0f, 0.0f, 0.0f);
+	silverWolfModel[0]->scale = glm::vec3(0.001f, 0.001f, 0.001f);
 
-		silverwolf_shape = new Shape(model[1], 99);
+	silverWolfModel[1] = new NewModel("Walk.fbx");
+	silverWolfModel[1]->pos = glm::vec3(0.0f, 0.0f, 0.0f);
+	silverWolfModel[1]->scale = glm::vec3(0.001f, 0.001f, 0.001f);
 
-
-		silverwolf_shape->s = glm::vec3(0.05f, 0.05f, 0.05f);
-
-
-		silverwolf_shape->t = glm::vec3(0.0f, 0.5f, -10.0f);
-	}
 }
 void Init_text()
 {
@@ -637,16 +645,7 @@ void Update() {
 			}
 		}
 	}
-	if (silverwolf_shape) {
-		for (size_t j = 0; j < silverwolf_shape->vertexData.size() / 3; ++j) {
-			combinateData.push_back(silverwolf_shape->vertexData[j * 3 + 0]);
-			combinateData.push_back(silverwolf_shape->vertexData[j * 3 + 1]);
-			combinateData.push_back(silverwolf_shape->vertexData[j * 3 + 2]);
-			combinateData.push_back(silverwolf_shape->normalData[j * 3 + 0]);
-			combinateData.push_back(silverwolf_shape->normalData[j * 3 + 1]);
-			combinateData.push_back(silverwolf_shape->normalData[j * 3 + 2]);
-		}
-	}
+
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, combinateData.size() * sizeof(GLfloat), combinateData.data(), GL_DYNAMIC_DRAW);
@@ -654,8 +653,6 @@ void Update() {
 }
 int main(int argc, char** argv) {
 	model.push_back(read_obj_file("cube.obj"));
-	//model.push_back(read_fbx_file("silverwolf.fbx"));
-	model.push_back(read_fbx_file("은랑.fbx"));
 	srand(static_cast<unsigned>(time(0))); // 랜덤 시드 초기화
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_DEPTH 추가
@@ -676,6 +673,7 @@ int main(int argc, char** argv) {
 	MakeVertexShaders();
 	MakeFragmentShaders();
 	shaderProgramID = MakeShaderProgram();
+	fbxShaderProgramID = MakeFbxShaderProgram();
 	if (shaderProgramID == 0) {
 		std::cerr << "셰이더 프로그램 생성 실패" << std::endl;
 		return -1;
@@ -709,48 +707,50 @@ int main(int argc, char** argv) {
 
 
 void DrawScene() {
-
-
 	if (game_start) {
-
-
-		glEnable(GL_DEPTH_TEST); // 깊이 테스트 활성화
+		glEnable(GL_DEPTH_TEST);
 		glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-		if (silver)
-			glEnable(GL_CULL_FACE);// 은면 제거 활성화
-		else
-			glDisable(GL_CULL_FACE);
+		if (silver) glEnable(GL_CULL_FACE);
+		else glDisable(GL_CULL_FACE);
 
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		// -------------------------------------------------------
+		// 0. 공통 데이터 준비 (조명 위치 계산 등)
+		// -------------------------------------------------------
+		// 조명 위치를 미리 계산해서 변수에 담아둡니다 (두 셰이더 모두에 보내기 위함)
+		glm::vec3 calcLightPos = { 0.0f, 20.0f, 0.0f };
+		glm::mat4 lightRotation = glm::rotate(glm::mat4(1.0f), glm::radians(light_angle), glm::vec3(1.0f, 0.0f, 0.0f));
+		calcLightPos = glm::vec3(lightRotation * glm::vec4(calcLightPos, 1.0f));
 
-
-
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 깊이 버퍼 클리어 추가
-
-		glUseProgram(shaderProgramID);
+		// VBO 업데이트 (블록/로봇용)
 		glBindVertexArray(VAO);
-
 		Update();
 
+		// -------------------------------------------------------
+		// 1. 메인 화면 렌더링
+		// -------------------------------------------------------
+		glViewport(0, 0, width, height);
 
+		// [STEP 1] 블록 & 로봇 그리기 (기본 셰이더 사용)
+		glUseProgram(shaderProgramID);
 
-		// Uniform 매트릭스 매핑
+		// 기본 셰이더 Uniform 설정
 		GLint modelLoc = glGetUniformLocation(shaderProgramID, "model");
 		GLint viewLoc = glGetUniformLocation(shaderProgramID, "view");
 		GLint projLoc = glGetUniformLocation(shaderProgramID, "proj");
 		GLint faceColorLoc = glGetUniformLocation(shaderProgramID, "faceColor");
-		GLint modelNormalLocation = glGetUniformLocation(shaderProgramID, "modelNormal"); //--- modelNormal 값 전달: 모델 매트릭스의 역전치 행렬
+		GLint modelNormalLoc = glGetUniformLocation(shaderProgramID, "modelNormal");
 
+		glUniform3f(glGetUniformLocation(shaderProgramID, "lightPos"), calcLightPos.x, calcLightPos.y, calcLightPos.z);
+		glUniform3f(glGetUniformLocation(shaderProgramID, "lightColor"), light_color.x, light_color.y, light_color.z);
+		glUniform3f(glGetUniformLocation(shaderProgramID, "viewPos"), cameraPos.x, cameraPos.y, cameraPos.z);
+		glUniform1f(glGetUniformLocation(shaderProgramID, "ambientLight"), ambientLight);
 
-
-
-
-		glViewport(0, 0, width, height);
-	{	
+		// 카메라 행렬 계산 (메인 뷰)
 		glm::vec3 con = cameraPos - dtd::v;
 		glm::mat4 view = glm::lookAt(con, camera_move, glm::vec3(0.0f, 1.0f, 0.0f));
 		glm::mat4 proj;
-
 		if (op) {
 			float aspect = (float)width / (float)height;
 			float size = 5.0f;
@@ -759,136 +759,128 @@ void DrawScene() {
 		else {
 			proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
 		}
-
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 
+		// 블록/로봇 그리기 루프
 		GLuint offset = 0;
 		size_t vertices_per_block = model[0].face_count * 3;
 
-		// 1. 미로 블록 렌더링 (블록당 1회 드로우 콜)
 		for (int i = 0; i < block.size(); ++i) {
 			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+			glUniformMatrix3fv(modelNormalLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
 			glUniform3f(faceColorLoc, block[i].colors.x, block[i].colors.y, block[i].colors.z);
 			glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
 			offset += vertices_per_block;
 		}
-
-		// 2. 로봇 렌더링 (부품당 1회 드로우 콜)
-		if (!robot.empty()) {
+		if (!robot.empty()&& !sss) {
 			for (int i = 0; i < robot.size(); ++i) {
 				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
-				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+				glUniformMatrix3fv(modelNormalLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
 				glUniform3f(faceColorLoc, robot[i].colors.x, robot[i].colors.y, robot[i].colors.z);
 				glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
 				offset += vertices_per_block;
 			}
 		}
 
-		if (silverwolf_shape) {
-			size_t vertices_silverwolf = model[1].face_count * 3;
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(silverwolf_shape->modelMat));
-			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(silverwolf_shape->modelMat)))));
-			glUniform3f(faceColorLoc, silverwolf_shape->colors.x, silverwolf_shape->colors.y, silverwolf_shape->colors.z);
-			glDrawArrays(GL_TRIANGLES, offset, vertices_silverwolf);
+		// [STEP 2] 은랑(FBX) 그리기 (FBX 셰이더로 전환!)
+		if (silverWolfModel&&sss) {
+			glUseProgram(fbxShaderProgramID);
 
-			offset += vertices_silverwolf;
+			// View, Proj, Light 유니폼 전달 (기존 코드 유지)
+			glUniformMatrix4fv(glGetUniformLocation(fbxShaderProgramID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+			glUniformMatrix4fv(glGetUniformLocation(fbxShaderProgramID, "proj"), 1, GL_FALSE, glm::value_ptr(proj));
+			glUniform3f(glGetUniformLocation(fbxShaderProgramID, "lightPos"), calcLightPos.x, calcLightPos.y, calcLightPos.z);
+			glUniform3f(glGetUniformLocation(fbxShaderProgramID, "lightColor"), light_color.x, light_color.y, light_color.z);
+			glUniform3f(glGetUniformLocation(fbxShaderProgramID, "viewPos"), cameraPos.x, cameraPos.y, cameraPos.z);
+			glUniform1f(glGetUniformLocation(fbxShaderProgramID, "ambientLight"), ambientLight);
+
+			static glm::vec3 v = robot[2].t;
+
+			// 로봇 움직임 동기화 (기존 코드 유지)
+			if (!robot.empty()) {
+				if (key_ != 0&& v!= robot[2].t) {
+					silverWolfModel[1]->angle = robot[2].angle;
+					silverWolfModel[1]->pos = robot[2].t;
+					silverWolfModel[1]->pos.y -= 0.1f;
+
+				}
+				else {
+					silverWolfModel[0]->angle = robot[2].angle;
+					silverWolfModel[0]->pos = robot[2].t;
+					silverWolfModel[0]->pos.y -= 0.1f;
+				}
+			}
+
+			// 🚨 [애니메이션 핵심] 시간 계산 🚨
+			// 프로그램이 시작된 후 흐른 시간을 초 단위(float)로 가져옵니다.
+			float currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+
+			// Draw 함수에 시간을 인자로 넘겨줍니다. (NewModel::Draw가 이 시간을 받아 뼈를 움직임)
+			if (!robot.empty() && key_ != 0&& v!= robot[2].t)
+				silverWolfModel[1]->Draw(fbxShaderProgramID, currentTime);
+			else if(!robot.empty())
+				silverWolfModel[0]->Draw(fbxShaderProgramID, currentTime);
+		
 		}
-	}
-    // 3. 미니맵 렌더링 (동일 로직 적용)
-	glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
-	{
+
+
+		// -------------------------------------------------------
+		// 2. 미니맵 렌더링
+		// -------------------------------------------------------
+		glViewport(width / 2 + width / 4, height / 2 + width / 4, width / 4, height / 4);
+
+		// [STEP 1] 블록 & 로봇 그리기 (다시 기본 셰이더로 복구)
+		glUseProgram(shaderProgramID);
+		glBindVertexArray(VAO); // VAO 재바인딩
+
 		float maxrange = max(block_width, block_height) / 2.0f + 2.0f;
-		glm::mat4 view = glm::lookAt(
-			glm::vec3(0.0f, 30.0f, 0.0f),
-			glm::vec3(0.0f, 0.0f, 0.0f),
-			glm::vec3(0.0f, 0.0f, -1.0f)
-		);
-		glm::mat4 proj = glm::ortho(-maxrange, maxrange, -maxrange, maxrange, 0.1f, 50.0f);
+		glm::mat4 mini_view = glm::lookAt(glm::vec3(0.0f, 30.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+		glm::mat4 mini_proj = glm::ortho(-maxrange, maxrange, -maxrange, maxrange, 0.1f, 50.0f);
 
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(mini_view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(mini_proj));
 
-		GLuint offset = 0;
-		size_t vertices_per_block = model[0].face_count * 3;
-
+		// 미니맵용 블록 그리기
+		offset = 0;
 		for (int i = 0; i < block.size(); ++i) {
 			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(block[i].modelMat));
-			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
+			glUniformMatrix3fv(modelNormalLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(block[i].modelMat)))));
 			glUniform3f(faceColorLoc, block[i].colors.x, block[i].colors.y, block[i].colors.z);
 			glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
 			offset += vertices_per_block;
 		}
-
+		// 미니맵용 로봇 그리기
 		if (!robot.empty()) {
 			for (int i = 0; i < robot.size(); ++i) {
 				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(robot[i].modelMat));
-				glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
+				glUniformMatrix3fv(modelNormalLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(robot[i].modelMat)))));
 				glUniform3f(faceColorLoc, robot[i].colors.x, robot[i].colors.y, robot[i].colors.z);
 				glDrawArrays(GL_TRIANGLES, offset, vertices_per_block);
 				offset += vertices_per_block;
 			}
 		}
 
-		if (silverwolf_shape) {
-			size_t vertices_silverwolf = model[1].face_count * 3; 
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(silverwolf_shape->modelMat));
-			glUniformMatrix3fv(modelNormalLocation, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(silverwolf_shape->modelMat)))));
-			glUniform3f(faceColorLoc, silverwolf_shape->colors.x, silverwolf_shape->colors.y, silverwolf_shape->colors.z);
-			glDrawArrays(GL_TRIANGLES, offset, vertices_silverwolf);
-
-			offset += vertices_silverwolf; 
-		}
+		// [STEP 2] 미니맵 은랑 그리기 (다시 FBX 셰이더로 전환)
+		
 	}
 
-
-
-		GLint lightPosLocation = glGetUniformLocation(shaderProgramID, "lightPos"); //--- lightPos 값 전달: (0.0, 0.0, 5.0);
-		GLint lightColorLocation = glGetUniformLocation(shaderProgramID, "lightColor"); //--- lightColor 값 전달: (1.0, 1.0, 1.0) 백색
-		GLint viewPosLocation = glGetUniformLocation(shaderProgramID, "viewPos"); //--- viewPos 값 전달: 카메라 위치
-		GLint ambientLightLocation = glGetUniformLocation(shaderProgramID, "ambientLight");
-
-
-
-
-		glm::vec3 lightPos = { 0.0f,20.0f,0.0f };
-		//glm::mat4 lightModelMat = shape.back().modelMat;
-		//lightPos = glm::vec3(lightModelMat * glm::vec4(lightPos, 1.0f));
-		glm::mat4 lightRotation = glm::rotate(glm::mat4(1.0f), glm::radians(light_angle), glm::vec3(1.0f, 0.0f, 0.0f));
-		lightPos = glm::vec3(lightRotation * glm::vec4(lightPos, 1.0f));
-
-		//cout<<light_angle<<" " << lightPos.x << ' ' << lightPos.y << ' ' << lightPos.z << endl;
-		glUniform3f(lightPosLocation,lightPos.x, lightPos.y, lightPos.z);
-		glUniform1f(ambientLightLocation, ambientLight);
-
-
-		glUniform3f(lightColorLocation, light_color.x, light_color.y, light_color.z);
-
-		glUniform3f(viewPosLocation, cameraPos.x, cameraPos.y, cameraPos.z);
-
-
-
-
-		glBindVertexArray(0);
+	// -------------------------------------------------------
+	// 3. UI 그리기 (2D)
+	// -------------------------------------------------------
+	glBindVertexArray(0);
 	glViewport(0, 0, width, height);
 
+	glUseProgram(0); // 고정 파이프라인 사용을 위해 셰이더 해제
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_DEPTH_TEST);
 
-	//textUI.Draw("F_Press", 50, 300, 1.0f, glm::vec3(1, 1, 1));
-
-
-
-
-	glUseProgram(0); 
-
+	// ... (이하 UI 그리기 코드는 기존과 동일) ...
 
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
-
 	gluOrtho2D(-50, width, 0, height);
 
 	glMatrixMode(GL_MODELVIEW);
@@ -906,7 +898,7 @@ void DrawScene() {
 		robot.empty() ? 0.0f : robot[2].t.x,
 		robot.empty() ? 0.0f : robot[2].t.z,
 		key_);
-	glRasterPos2i(0, height-20);
+	glRasterPos2i(0, height - 20);
 	for (const char* c = statusText; *c != '\0'; c++) {
 		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
 	}
@@ -933,10 +925,9 @@ void DrawScene() {
 		}
 	}
 
-
 	glm::mat4 uiProj = glm::ortho(200.0f, (float)width, 0.0f, (float)height);
-	uiImage2->Draw(uiShaderProgram, uiProj);
-	uiImage3->Draw(uiShaderProgram, uiProj);
+	if (uiImage2) uiImage2->Draw(uiShaderProgram, uiProj);
+	if (uiImage3) uiImage3->Draw(uiShaderProgram, uiProj);
 
 	if (h) {
 		static int t = 0;
@@ -945,40 +936,27 @@ void DrawScene() {
 			frame_num = (frame_num + 1) % 8;
 			t = 0;
 		}
-		uiImage4[frame_num]->Draw(uiShaderProgram, uiProj);
+		if (uiImage4[frame_num]) uiImage4[frame_num]->Draw(uiShaderProgram, uiProj);
 	}
-
-
 
 	glPopMatrix();
 	glMatrixMode(GL_PROJECTION);
 	glPopMatrix();
 	glMatrixMode(GL_MODELVIEW);
-
 	glEnable(GL_DEPTH_TEST);
-	}
-	
-	if (uiImage->color.w > 0.0f) {
-	
-		// ... (glEnable(GL_CULL_FACE) 등)
 
-
-
-		glDisable(GL_DEPTH_TEST); // UI가 항상 맨 위에
+	if (uiImage && uiImage->color.w > 0.0f) {
+		glDisable(GL_DEPTH_TEST);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glDisable(GL_CULL_FACE);
-
 
 		if (uiImage && uiShaderProgram != 0) {
 			glm::mat4 uiProj = glm::ortho(0.0f, (float)width, 0.0f, (float)height);
 			uiImage->Draw(uiShaderProgram, uiProj);
 		}
 
-
-
 		if (!game_start) {
-
 			std::string prompt;
 			if (is_input_width) {
 				prompt = "WIDTH: ";
@@ -987,19 +965,13 @@ void DrawScene() {
 				prompt = "HEIGHT: ";
 			}
 			prompt += input_buffer;
-
-			// 텍스트 출력 (현재 입력 버퍼 내용 표시)
 			textUI.Draw(prompt, width / 2.0f - 200.0f, 200, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
 		}
 
-		// 렌더링 후 상태 복구
 		glUseProgram(0);
 		glDisable(GL_BLEND);
 		glEnable(GL_DEPTH_TEST);
 	}
-
-
-
 
 	glutSwapBuffers();
 }
@@ -1411,6 +1383,10 @@ void Keyboard(unsigned char key, int x, int y)
 	for (int i = 0;i < 8;++i)
 		uiImage4[i]->color=glm::vec4(1.0f);
 	frame_speed = 20;
+	final_time = 0.0f;
+	v = false;
+	m = false;
+	time_check = false;
 	break;
 	case 'q':
 	exit(0);
@@ -1563,6 +1539,9 @@ void Keyboard(unsigned char key, int x, int y)
 	case '.':
 		frame_speed += 2;
 		if (frame_speed > 60) frame_speed = 60;
+		break;
+	case '=':
+		sss = !sss;
 		break;
 	}
 
@@ -2404,4 +2383,36 @@ Model read_fbx_file(const char* filename) {
 	}
 
 	return model;
+}
+GLuint MakeFbxShaderProgram() {
+	GLchar* vertexSource = filetobuf("vertex_fbx.glsl");
+	GLchar* fragmentSource = filetobuf("fragment_fbx.glsl");
+
+	if (!vertexSource || !fragmentSource) {
+		std::cerr << "ERROR: FBX shader files not found." << std::endl;
+		return 0;
+	}
+
+	GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vShader, 1, &vertexSource, NULL);
+	glCompileShader(vShader);
+
+	GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fShader, 1, &fragmentSource, NULL);
+	glCompileShader(fShader);
+
+	GLuint programID = glCreateProgram();
+	glAttachShader(programID, vShader);
+	glAttachShader(programID, fShader);
+	glLinkProgram(programID);
+
+	// 에러 체크 생략 (필요 시 기존 함수 참조하여 추가)
+
+	glDeleteShader(vShader);
+	glDeleteShader(fShader);
+
+	free(vertexSource);
+	free(fragmentSource);
+
+	return programID;
 }
